@@ -3,3 +3,5 @@
 server/pond_save
 server/pond_read
 xcuserdata/
+store/store_tool
+store/store_test
