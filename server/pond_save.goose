@@ -10,6 +10,8 @@ import base64;
 
 // pond_verify.h: ECDSA P-256 with SHA-256, through libcrypto.
 extern fn pond_verify_p256(pub_der: const u8[:], msg: const u8[:], sig_der: const u8[:]) -> bool;
+// pond_lock.h: an exclusive flock on a lock file, held until the process exits.
+extern fn pond_lock(path: const u8[:]) -> bool;
 
 let MAX_BODY = 8192;
 
@@ -26,12 +28,34 @@ fn is_name(s: u8[:]) -> bool {
     return all(s) { (it >= 'a' && it <= 'z') || (it >= 'A' && it <= 'Z') || (it >= '0' && it <= '9') || it == '-' };
 }
 
-fn is_object(n: json::Node?) -> bool {
+// An entry has only the public fields of docs/protocol.md, with valid values.
+// Any other field is refused, so that a fault in the phone cannot put
+// private data (fun, a notice, an experiment) in a public file.
+fn is_public_entry(n: json::Node?) -> bool {
     guard n else { return false; }
     match n.val {
-        Obj => { return true; },
+        Obj => {},
         _ => { return false; },
     }
+    var c = n.first;
+    while c {
+        let s, is_str = json::as_string(c);
+        let i, is_int = json::as_i64(c);
+        if c.key == "domain" {
+            guard is_int && i >= 1 && i <= 17 else { return false; }
+        } else if c.key == "mode" {
+            guard is_str && (s == "home" || s == "live" || s == "take-part" || s == "make") else { return false; }
+        } else if c.key == "kind" {
+            guard is_str && (s == "media" || s == "note") else { return false; }
+        } else {
+            let known = c.key == "date" || c.key == "title" || c.key == "link" || c.key == "made" || c.key == "slot" || c.key == "interest";
+            guard known && is_str else { return false; }
+        }
+        c .= c.next;
+    }
+    let date, date_ok = json::as_string(json::member(n, "date"));
+    let title, title_ok = json::as_string(json::member(n, "title"));
+    return date_ok && title_ok;
 }
 
 fn main() {
@@ -63,8 +87,7 @@ fn main() {
         reply("400 Bad Request", "need v 1, id, rev and key");
         return;
     }
-    // Fun is private (docs/concepts.md), so it never goes into a public file.
-    let put_ok = op_ok && op == "put" && is_object(entry) && !json::member(entry, "fun");
+    let put_ok = op_ok && op == "put" && is_public_entry(entry);
     let remove_ok = op_ok && op == "remove" && !entry;
     guard put_ok || remove_ok else { reply("400 Bad Request", "need op put with an entry, or op remove"); return; }
 
@@ -83,6 +106,8 @@ fn main() {
     guard signed else { reply("403 Forbidden", "no valid signature from an enrolled key"); return; }
 
     // The higher revision wins. The same body again is a retry, not a fault.
+    // The lock makes the rev check and the write one step for concurrent requests.
+    guard pond_lock(str(dir, "/entries/.lock")) else { reply("500 Internal Server Error", "cannot lock the entries"); return; }
     let path = str(dir, "/entries/", id, ".json");
     var old: u8[>..] = [];
     if read_file(path, old) {

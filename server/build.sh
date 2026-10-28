@@ -7,7 +7,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 
 if [ "${1:-}" = c ]; then
     # From inside server/, so that the C names its source with no local path.
-    (cd "$here" && "${GOOSE:-goose}" --standalone --include pond_verify.h -o pond_save.c pond_save.goose)
+    (cd "$here" && "${GOOSE:-goose}" --standalone --include pond_verify.h --include pond_lock.h -o pond_save.c pond_save.goose)
 fi
 
 # OpenBSD has libcrypto in base. The Mac has none for programs, so use Homebrew's.

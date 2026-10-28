@@ -19,9 +19,12 @@ public struct Entry: Codable, Equatable, Sendable {
     public var mode: Mode?
     public var kind: Kind
     public var slot: String?
+    /// The name of the interest of a paper (docs/concepts.md, One paper).
+    public var interest: String?
 
     public init(date: String, title: String, link: URL? = nil, made: String? = nil,
-                domain: Int? = nil, mode: Mode? = nil, kind: Kind = .media, slot: String? = nil) {
+                domain: Int? = nil, mode: Mode? = nil, kind: Kind = .media, slot: String? = nil,
+                interest: String? = nil) {
         self.date = date
         self.title = title
         self.link = link
@@ -30,6 +33,7 @@ public struct Entry: Codable, Equatable, Sendable {
         self.mode = mode
         self.kind = kind
         self.slot = slot
+        self.interest = interest
     }
 }
 

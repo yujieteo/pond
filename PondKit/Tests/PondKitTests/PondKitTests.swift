@@ -91,6 +91,9 @@ let plan = Plan(markdown: try! String(contentsOf: Bundle.module.url(forResource:
     let entry = Entry(date: "2026-10-28", title: "an album", domain: 2, mode: .home)
     #expect(try post(SignedChange(.put(entry, id: "e1", rev: 1, key: "phone"), signer: key)).hasPrefix("Status: 201"))
     #expect(try post(SignedChange(.put(entry, id: "e1", rev: 1, key: "phone"), signer: P256.Signing.PrivateKey())).hasPrefix("Status: 403"))
+    let paper = Entry(date: "2026-10-28", title: "a paper", link: URL(string: "https://arxiv.org/abs/2610.00001")!,
+                      made: "a note", domain: 15, mode: .home, kind: .note, slot: "morning", interest: "biology")
+    #expect(try post(SignedChange(.put(paper, id: "e2", rev: 1, key: "phone"), signer: key)).hasPrefix("Status: 201"))
 }
 #endif
 
