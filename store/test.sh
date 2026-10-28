@@ -101,4 +101,4 @@ records=$("$tool" "$dir" check | awk '{ print $2 }')
 expect "6 writer processes: each created change is in the segment once" "$created" "$records"
 expect "6 writer processes: no rev goes back" ok "$("$tool" "$dir" revs 2>&1)"
 
-[ "$fails" = 0 ] && echo "all pass" || { echo "$fails failed"; exit 1; }
+if [ "$fails" = 0 ]; then echo "all pass"; else echo "$fails failed"; exit 1; fi
