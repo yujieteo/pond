@@ -44,43 +44,47 @@ verify() { # dir acked: counts a failure
 
 # Kills at random points in a write: the writer kills itself with SIGKILL
 # when its writes reach a random number of bytes, in the middle of a record
-# or at its end. Each 25th kill is in a compaction instead: a compacted
-# segment of the 20 ids is about 2,800 bytes.
+# or at its end. Each 25th pass is a compaction instead: a compacted
+# segment of the 20 ids is about 2,800 bytes. A kill counts only if the
+# process died by SIGKILL (status 137), not if it ended before its budget.
 dir=$work/crash
 mkdir "$dir"
-awk 'BEGIN { srand(20261028); for (i = 0; i < 1000; i++) print int(rand() * 600) + 1, int(rand() * 1000000) }' > "$work/points"
-acked=0 kills=0 compactions=0 bad=0
-while read -r point big; do
-    if [ $((kills % 25)) = 24 ]; then
+awk 'BEGIN { srand(20261028); for (i = 0; i < 2000; i++) print int(rand() * 600) + 1, int(rand() * 1000000) }' > "$work/points"
+acked=0 passes=0 kills=0 compactions=0 bad=0
+while [ "$kills" -lt 1000 ] && read -r point big; do
+    status=0
+    if [ $((passes % 25)) = 24 ]; then
         STORE_CRASH_AFTER=$((big % 3000 + 1)) "$tool" "$dir" compact > /dev/null 2>&1 &
-        wait $! 2> /dev/null || true
-        compactions=$((compactions + 1))
+        wait $! 2> /dev/null || status=$?
+        [ "$status" != 137 ] || compactions=$((compactions + 1))
     else
         STORE_CRASH_AFTER=$point "$tool" "$dir" append-file "$lines" "$acked" > "$work/out" 2>&1 &
-        wait $! 2> /dev/null || true
+        wait $! 2> /dev/null || status=$?
         acked=$(next_line "$work/out" "$acked")
     fi
-    kills=$((kills + 1))
+    passes=$((passes + 1))
+    [ "$status" != 137 ] || kills=$((kills + 1))
     verify "$dir" "$acked"
     [ "$acked" -lt "$total" ] || { rm -r "$dir"; mkdir "$dir"; acked=0; }
 done < "$work/points"
-expect "$kills kills in a write at random points ($compactions in a compaction): no acknowledged line lost or changed, no part of a record served" "1000 0" "$kills $bad"
+expect "$kills kills in a write at random points, in $passes passes ($compactions in a compaction): no acknowledged line lost or changed, no part of a record served" "1000 0" "$kills $bad"
 "$tool" "$dir" check > "$work/check"
 echo "note: $acked of $total lines acknowledged; $(cat "$work/check")"
 
 # Kills from outside, at a random time.
 dir=$work/async
 mkdir "$dir"
-awk 'BEGIN { srand(7); for (i = 0; i < 100; i++) printf "0.%03d\n", int(rand() * 60) + 1 }' > "$work/times"
+awk 'BEGIN { srand(7); for (i = 0; i < 200; i++) printf "0.%03d\n", int(rand() * 60) + 1 }' > "$work/times"
 acked=0 kills=0 bad=0
-while read -r t; do
+while [ "$kills" -lt 100 ] && read -r t; do
     "$tool" "$dir" append-file "$lines" "$acked" > "$work/out" 2>&1 &
     pid=$!
     sleep "$t"
     kill -9 "$pid" 2> /dev/null || true
-    wait "$pid" 2> /dev/null || true
+    status=0
+    wait "$pid" 2> /dev/null || status=$?
     acked=$(next_line "$work/out" "$acked")
-    kills=$((kills + 1))
+    [ "$status" != 137 ] || kills=$((kills + 1))
     verify "$dir" "$acked"
     [ "$acked" -lt "$total" ] || { rm -r "$dir"; mkdir "$dir"; acked=0; }
 done < "$work/times"

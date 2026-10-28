@@ -53,8 +53,9 @@ struct Entry {
     tag_len: i64,
 }
 
-// Bytes in the middle of the segment that are not a whole record with a
-// good checksum, but with a good record after them.
+// Bytes that are not a whole record with a good checksum: in the middle of
+// the segment, with a good record after them, or at the end, where they have
+// the magic, a length and all of the bytes of a record.
 struct Damage { at: i64, size: i64 }
 
 enum Status { Created, Same, Conflict, Invalid, Failed }
@@ -73,6 +74,7 @@ var strs: u8[>..];
 var entries: Entry[>..];
 var by_id = dictionary<u8[..64], i64> {};
 var order: i64[>..];        // the listed entries, newest first, when sorted is true
+var by_tag: i64[>..];       // the listed entries with a tag, by the tag, then newest first
 var sorted = false;
 var damage: Damage[>..];
 
@@ -154,15 +156,22 @@ fn meta(body: u8[:], out: u8[>..]&) -> Meta, bool {
     return m, true;
 }
 
-// The size of the whole record with a good checksum at offset at of data,
-// or 0.
-fn record_at(at: i64) -> i64 {
+// The size of the record at offset at of data, if it has the magic, a length
+// of 1 to MAX_BODY and all of its bytes, or 0. The checksum can be bad.
+fn whole_at(at: i64) -> i64 {
     guard at >= 0 && at + HEADER <= data.len else { return 0; }
     guard data[at..at + 4] == MAGIC[..] else { return 0; }
     let n = get_u32(data, at + 4) as i64;
     guard n >= 1 && n <= MAX_BODY && at + HEADER + n <= data.len else { return 0; }
-    guard get_u32(data, at + 8) == checksum(data[at + 4..at + 8], data[at + HEADER..at + HEADER + n]) else { return 0; }
     return HEADER + n;
+}
+
+// The size of the whole record with a good checksum at offset at of data,
+// or 0.
+fn record_at(at: i64) -> i64 {
+    let n = whole_at(at);
+    guard n > 0 && get_u32(data, at + 8) == checksum(data[at + 4..at + 8], data[at + HEADER..at + n]) else { return 0; }
+    return n;
 }
 
 // F(at, size, good) for each whole record in data from offset from, and for
@@ -233,6 +242,7 @@ fn index(at: i64, n: i64) {
 
 // Reads the records that the file has past data, and indexes them. In a
 // writer, which holds the lock, a torn record at the end is cut off the file.
+// A whole record with a bad checksum at the end is damage: no write cuts it.
 fn catch_up() -> bool {
     // A compaction by another process put a new segment at the path, or the
     // file got shorter, which no write of the store does: read it again.
@@ -242,6 +252,8 @@ fn catch_up() -> bool {
         guard seg_fd >= 0 else { return !writer; }
         seg_inode = file_inode(seg_fd);
     }
+    // The damage at the end from the last read: this read finds it again.
+    if damage.len > 0 && last(damage).at == data.len { damage.pop(); }
     let size = file_size(seg_fd);
     guard size >= data.len else { return false; }
     let start = data.len;
@@ -249,9 +261,11 @@ fn catch_up() -> bool {
     let end = walk(start) { at, n, good =>
         if good { index(at, n); } else { damage.push(Damage { at: at, size: n }); }
     };
+    let damaged_end = whole_at(end) > 0;
+    if damaged_end { damage.push(Damage { at: end, size: size - end }); }
     data.resize(end);
     torn = size - end;
-    if writer && torn > 0 {
+    if writer && torn > 0 && !damaged_end {
         guard truncate_file(seg_fd, end) else { return false; }
         torn = 0;
     }
@@ -270,6 +284,7 @@ fn reset() {
     entries.clear();
     by_id.clear();
     order.clear();
+    by_tag.clear();
     sorted = false;
     damage.clear();
 }
@@ -285,7 +300,8 @@ fn set_path(out: u8[..1024]&, dir: u8[:], name: u8[:]) -> bool {
 
 // Opens the store in the directory dir: store.seg and store.lock. A writer
 // makes the files if they are not there, and recovers after a crash in the
-// middle of a write: it cuts a torn record off the end of the segment. A
+// middle of a write: it cuts a torn record off the end of the segment, but
+// not a whole record with a bad checksum. A
 // reader (write false) changes no file, and does not see a torn record.
 fn open(dir: u8[:], write: bool) -> bool {
     close();
@@ -334,6 +350,7 @@ fn status_text(s: Status) -> const u8[:] {
 // body again is a retry and changes nothing; any other body with a rev that
 // is not higher is refused. The second result is the rev that the store had
 // for the id, or 0. Created comes back only after the record is on the disk.
+// A store with damage at the end refuses all appends with Failed.
 fn append(body: u8[:]) -> Status, i64 {
     guard writer else { return Status.Failed, 0; }
     var scratch: u8[>..] = [];
@@ -351,7 +368,7 @@ fn append(body: u8[:]) -> Status, i64 {
 }
 
 fn locked_append(body: u8[:], id: u8[..64], rev: i64) -> Status, i64 {
-    guard catch_up() else { return Status.Failed, 0; }
+    guard catch_up() && torn == 0 else { return Status.Failed, 0; }
     let have = ::get(by_id, id);
     var old_rev = 0;
     if have {
@@ -390,31 +407,44 @@ fn body(e: Entry&) -> const u8[:] { data[e.at..e.at + e.size] }
 fn date(e: Entry&) -> const u8[:] { strs[e.date_at..e.date_at + e.date_len] }
 fn tag(e: Entry&) -> const u8[:] { strs[e.tag_at..e.tag_at + e.tag_len] }
 
-// The entries that are not removed, newest first: the later date, then on
-// the same date the later change. Each item is a place in entries.
-fn newest_first() -> const i64[:] {
-    if !sorted {
-        order.clear();
-        for e, i in entries {
-            if !e.removed { order.push(i); }
-        }
-        sort(order) { a, b =>
-            let d = compare(date(entries[a]), date(entries[b]));
-            d > 0 || (d == 0 && entries[a].seq > entries[b].seq)
-        };
-        sorted = true;
+// Entry a is listed before entry b: the later date, then on the same date
+// the later change.
+fn newer(a: i64, b: i64) -> bool {
+    let d = compare(date(entries[a]), date(entries[b]));
+    return d > 0 || (d == 0 && entries[a].seq > entries[b].seq);
+}
+
+// Sorts the date list and the tag list again after a change.
+fn sort_lists() {
+    guard !sorted else { return; }
+    order.clear();
+    by_tag.clear();
+    for e, i in entries {
+        guard !e.removed else { continue; }
+        order.push(i);
+        if e.tag_len > 0 { by_tag.push(i); }
     }
+    sort(order) { a, b => newer(a, b) };
+    sort(by_tag) { a, b =>
+        let d = compare(tag(entries[a]), tag(entries[b]));
+        d < 0 || (d == 0 && newer(a, b))
+    };
+    sorted = true;
+}
+
+// The entries that are not removed, newest first. Each item is a place in
+// entries.
+fn newest_first() -> const i64[:] {
+    sort_lists();
     return order;
 }
 
 // The listed entries with the tag t, newest first. An empty tag is no tag.
-fn with_tag(t: u8[:]) -> i64[>..] {
-    var out: i64[>..] = [];
-    guard t.len > 0 else { return out; }
-    for i in newest_first() {
-        if tag(entries[i]) == t { out.push(i); }
-    }
-    return out;
+fn with_tag(t: u8[:]) -> const i64[:] {
+    sort_lists();
+    let from = lower_bound(by_tag) { compare(tag(entries[it]), t) < 0 };
+    let to = lower_bound(by_tag) { compare(tag(entries[it]), t) <= 0 };
+    return by_tag[from..to];
 }
 
 fn entry(i: i64) -> Entry& { entries[i] }

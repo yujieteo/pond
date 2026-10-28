@@ -59,10 +59,9 @@ The index is in memory. The store makes it when it opens the segment, and change
 
 - **By id**: a dictionary from the `id` to one item. The item has the newest `rev`, the place of the body in the segment, the number of the record (the order of the changes), the date, the tag, and a flag for a `remove`.
 - **By date**: a list of the entries that are not removed, sorted by the date and then by the number of the record. The store sorts the list again only after a change.
-- **By tag**: `with_tag` takes the entries of the date list that have the tag.
+- **By tag**: a list of the entries that are not removed and have a tag, sorted by the tag, then in the order of the date list. `with_tag` finds the entries of one tag with a binary search. The store sorts this list again with the date list.
 
 The date and the tag are kept with their JSON escapes decoded, so `"biology"` has the tag `biology`.
-The list by tag reads all of the date list. Reason: the log has thousands of entries, and the walk of 2,000 entries takes less than 10 µs. A separate tag index is more code with no measured need.
 
 The store also keeps the bytes of the segment in memory, so a read does not go to the disk.
 A Goose data stack holds the segment. `store/build.sh` sets 16 MB for each stack, which holds about 50,000 entries. A larger log needs a larger stack, or a compaction.
@@ -73,7 +72,7 @@ A Goose data stack holds the segment. `store/build.sh` sets 16 MB for each stack
 
 1. It reads the body and refuses it with `Invalid` if the body does not have the fields above. It copies the body.
 2. It locks `store.lock`.
-3. It reads the records that other writers appended since its last read. If the file has a torn record at the end, it cuts that record off the file.
+3. It reads the records that other writers appended since its last read. If the file has a torn record at the end, it cuts that record off the file. If the file has damage at the end, the result is `Failed`.
 4. It applies the rule. If the body is the same as the newest body, the result is `Same`. If the `rev` is not higher, the result is `Conflict`.
 5. It writes the record at the end of the file with one `write`, then calls `fsync`. On macOS it calls `fcntl(F_FULLFSYNC)`, because `fsync` on macOS does not empty the cache of the disk.
 6. It adds the record to the index, and releases the lock.
@@ -88,12 +87,16 @@ The writer `open` also calls `fsync` on the directory. Thus the name of a new se
 | What the store finds | What it does |
 |---|---|
 | A good record. | It adds the record to the index. |
-| Bytes that are not a good record, and no good record after them: a torn record from a crash in the middle of a write, zeros from the file system, or damage in the last record. | A reader does not serve the bytes, and does not change the file. A writer, which holds the lock, cuts the bytes off the file before it appends. |
+| Bytes that are not a good record, and no good record after them, with no magic or fewer bytes than their length: a torn record from a crash in the middle of a write, or zeros from the file system. | A reader does not serve the bytes, and does not change the file. A writer, which holds the lock, cuts the bytes off the file before it appends. |
+| Bytes that are not a good record, and no good record after them, with the magic, a length of 1 to 8192 and all of the bytes: damage in the last record. | The store does not serve the bytes, and adds them to the damage list. No write cuts the damage, each `append` gives `Failed`, and `compact` refuses to run. |
 | Bytes that are not a good record, and a good record after them: damage in the middle. | The store does not serve the bytes, and adds them to the damage list. It reads the records after them as usual. No write cuts the damage, and `compact` refuses to run. |
+
+A write gives the bytes of a record in sequence, so a crash in the middle of a write leaves fewer bytes than the length. Thus a record with all of its bytes and a bad checksum is damage to an acknowledged record, not a torn write.
+The writer refuses to append after damage at the end. Reason: an append after it hides the damaged record from the operator, and the bytes of the damage stay for a repair.
 
 A reader that reads while a writer writes can see a part of a record at the end. That part is a torn record to the reader, so the reader does not serve it. It reads the whole record at its next `refresh`.
 
-Damage in the middle loses the record that it hits on this node. The store does not serve a changed body, and it serves all the other records.
+Damage loses the record that it hits on this node. The store does not serve a changed body, and it serves all the other records.
 If the lost record was the newest revision of its entry, `get` gives the revision before it until a repair.
 In phase 3, a node pulls the revisions that it does not have from its peers, and that sync repairs the entry. Until then, the damage list tells the operator.
 `compact` refuses to run on a store with damage. Reason: the old bytes can help a manual repair, and a compaction removes them.
@@ -120,16 +123,18 @@ With that flag, the variable `STORE_CRASH_AFTER=<n>` kills the process with SIGK
 `store_test` runs in one process:
 
 - **The rules**: create, the same body, a different body at the same `rev`, a higher `rev`, a replay of an old `rev`, a `remove`, a replay after a `remove`, 8 bodies that are not valid, and a body over 8192 bytes.
-- **The index**: the order by date and change, the list by tag with escapes, a change that moves an entry up, and a reader that opens the same store.
+- **The index**: the order by date and change, the list by tag with escapes, a change of tag, a removed entry, a change that moves an entry up, and a reader that opens the same store.
 - **Torn records**: a cut of a segment of 12 records at each byte (1,323 cuts). After each cut, a reader serves only the whole records, and a writer cuts the torn bytes off and appends. It also adds tails of zeros and of random bytes.
-- **Damage in the middle**: 2,000 trials that change 1 byte or a run of 1 to 64 bytes in a segment of 40 records. After each trial, the store serves all the records that the damage did not hit, serves no changed body, reports the damage, does not cut it, and refuses to compact.
+- **Damage**: 2,000 trials that change 1 byte or a run of 1 to 64 bytes in a segment of 40 records. After each trial, the store serves all the records that the damage did not hit, serves no changed body, reports the damage, does not cut it, and refuses to compact. A change of 1 byte in the last record is also damage: the writer reports it, does not cut it, and refuses to append. Zeros in place of the last record are a torn record: the writer cuts them off and appends.
 - **Compaction**: 201 records of 7 entries become 7 records. The newest bodies, the order and the rule stay the same, and a reader sees the new segment.
 - **Threads**: 8 writer threads make 150 appends each to 10 entries. Each writer uses the `rev` after the one that it saw last, as the outbox of the phone does after a 409. 2 reader threads call `refresh` at the same time and check what they see.
 
 `test.sh` then runs the tests that need processes. After each kill, `store_tool verify` compares the store with a model of the rule. The model gets the lines that the writer acknowledged, and the line that was in flight at the kill.
 
-- **1,000 kills at random points**: each kill is at a random byte from 1 to 600 of the writes, so most kills occur in the middle of a record. Each 25th kill is in a compaction.
+- **1,000 kills at random points**: each kill is at a random byte from 1 to 600 of the writes, so most kills occur in the middle of a record. Each 25th pass is a compaction.
 - **100 kills at a random time**: SIGKILL from outside, 1 to 60 ms after the writer starts.
+
+A kill counts only if the process died by SIGKILL. A pass in which the process ends before its kill point does not count. The test runs until it has 1,000 kills and 100 kills.
 - **6 writer processes** on one store, with the same rule as the writer threads.
 
 After each kill, the test checks these points:
@@ -155,7 +160,7 @@ All the tests pass on these three systems. The numbers are from `store_test` and
 
 | Test | Result on each system |
 |---|---|
-| Kills at random points in a write | 1,000 (40 in a compaction): 0 lost or changed lines, 0 parts of a record served |
+| Kills at random points in a write | 1,000 by SIGKILL in 1,009 passes (31 in a compaction): 0 lost or changed lines, 0 parts of a record served |
 | Kills at a random time | 100: 0 lost or changed lines |
 | Cuts at each byte | 1,323: 0 faults |
 | Damage in the middle | 2,000 trials: 0 faults |

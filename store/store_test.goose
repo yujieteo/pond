@@ -108,10 +108,18 @@ fn test_rules() {
     ids.clear();
     listed_ids(ids, store::with_tag("biology"));
     expect("by tag, newest first, with JSON escapes decoded", ids == "paper esc");
+    store::append(tagged("paper", 2, "2026-10-28", "math"));
+    store::append(remove("other", 2));
+    ids.clear();
+    listed_ids(ids, store::with_tag("biology"));
+    expect("a new tag takes an entry off its old tag", ids == "esc");
+    ids.clear();
+    listed_ids(ids, store::with_tag("math"));
+    expect("a new tag puts an entry under it, and a removed entry is under no tag", ids == "paper");
     ids.clear();
     store::append(put("morning", 2, "2026-10-28", "morning, changed"));
     listed_ids(ids, store::newest_first());
-    expect("a change moves an entry up on its date", ids == "morning evening paper old other esc");
+    expect("a change moves an entry up on its date", ids == "morning paper evening old esc");
     expect("an entry with no tag is not under a tag", store::with_tag("").len == 0);
     let keep = copy(ids);
 
@@ -241,11 +249,31 @@ fn test_corrupt() {
     }
     expect(str("damage in the middle, ", trials, " times: only the hit records are lost, none is changed, the damage is reported"), bad == 0);
 
-    // A change in the last record is a torn record: no good record is after it.
+    // A change in the last record, which has all of its bytes, is damage too.
     var t = copy(whole);
     t[whole.len - 5] ^= 1;
     write_file(seg, t);
-    expect("damage in the last record is cut off like a torn record", store::open(dir, true) && holds(ends.len - 1) && store::damage_list().len == 0);
+    let opened = store::open(dir, true) && holds(ends.len - 1);
+    let damage = store::damage_list();
+    let reported = damage.len == 1 && damage[0].at == last_start && damage[0].size == whole.len - last_start;
+    let s, rev = store::append(sample_body(ends.len));
+    var after: u8[>..] = [];
+    read_file(seg, after);
+    expect("damage in the last record is reported, not cut, and the writer refuses to append",
+           opened && reported && is(s, store::Status.Failed) && after == t && !store::compact());
+    expect("a refresh reports the damage at the end once", store::refresh() && store::damage_list().len == 1);
+
+    // Zeros in place of the last record, as a power loss can leave: no magic,
+    // so a torn record.
+    t = copy(whole);
+    for k in whole.len - last_start { t[last_start + k] = 0; }
+    write_file(seg, t);
+    let zero_opened = store::open(dir, true) && holds(ends.len - 1) && store::damage_list().len == 0;
+    after.clear();
+    read_file(seg, after);
+    let s2, rev2 = store::append(sample_body(ends.len - 1));
+    expect("zeros in place of the last record are cut off like a torn record, and the writer appends",
+           zero_opened && after == whole[..last_start] && is(s2, store::Status.Created) && holds(ends.len));
     store::close();
 }
 
