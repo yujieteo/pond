@@ -1,14 +1,18 @@
 import Foundation
 import Observation
 import PondKit
+import WidgetKit
 
-/// The state of the app: the journal on the phone, the plan, the key and the sends.
+/// The state of the app: the journal on the phone, the plan, the invite, the key and the sends.
+/// One store serves the app, the notification and the widgets' buttons.
 @Observable @MainActor
 final class Store {
+    static let shared = Store()
+
     private(set) var journal: Journal
     let plan: Plan
+    private(set) var invite: Invite
     private(set) var key: Result<DeviceKey, Error>?
-    private(set) var choices: [Choice] = []
 
     /// "Every day" items (R13). They stay here until the plan editor (build step 11) keeps them in the plan.
     static let everyDay = ["RSS", "Textbook", "Fiction"]
@@ -20,6 +24,7 @@ final class Store {
     private let file = URL.applicationSupportDirectory.appending(path: "journal.json")
     private var sending = false
     private var wake: Task<Void, Never>?
+    private var scheduling: Task<Void, Never>?
 
     init() {
         journal = (try? JSONDecoder().decode(Journal.self, from: Data(contentsOf: file))) ?? Journal()
@@ -27,10 +32,14 @@ final class Store {
         let text = Bundle.main.url(forResource: "media-plan", withExtension: "md")
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
         plan = Plan(markdown: text)
-        refreshMenu()
+        invite = SharedInvite.load()
+        offer()
     }
 
     var today: String { Menu.day(.now) }
+
+    /// Today's choices and pick: the same in the app, the notification and the widgets.
+    var inviteToday: InviteDay? { invite[today] }
 
     /// The entries of today on the screen, newest first.
     var doneToday: [Record] {
@@ -50,11 +59,71 @@ final class Store {
         key = Result(catching: { try DeviceKey.load() })
     }
 
-    func refreshMenu() {
-        choices = Menu.choices(plan: plan, journal: journal, date: .now)
-        for case .enjoyed(let id) in choices.map(\.source) where journal[id]?.offered != today {
-            journal.offer(id, on: today)
-            save()
+    /// Makes the choices of each day not yet offered, and schedules their notifications (docs/concepts.md, sync 1).
+    /// It schedules the notifications also with no change, because the app can open after a reinstall or a restore.
+    func offer() {
+        offer(before: invite)
+    }
+
+    func setInviteTime(_ time: Date) {
+        let before = invite
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: time)
+        invite.setTime(hour: parts.hour ?? 19, minute: parts.minute ?? 30)
+        offer(before: before)
+    }
+
+    private func offer(before: Invite) {
+        let journal = journal
+        invite.offer(plan: plan, journal: &self.journal, now: .now)
+        if self.journal != journal { save() }
+        if !inviteChanged(before) { schedule() }
+    }
+
+    /// A pick changes the notification in place and the widgets (sync 2 and 14).
+    func pick(_ index: Int, on day: String) {
+        let before = invite
+        invite.pick(index, on: day)
+        inviteChanged(before)
+    }
+
+    func unpick(on day: String) {
+        let before = invite
+        invite.unpick(on: day)
+        inviteChanged(before)
+    }
+
+    /// "Done" in the app, the notification or a widget: records the pick, then signs and sends it (sync 3).
+    /// With no network, the entry waits in the outbox.
+    @discardableResult
+    func done(on day: String) -> String? {
+        let before = invite
+        guard let entry = invite.done(on: day) else { return nil }
+        let id = record(entry)
+        inviteChanged(before)
+        return id
+    }
+
+    /// The work that a button of the notification or a widget waits for before the app goes back to the background.
+    func finish() async {
+        await flush()
+        await scheduling?.value
+    }
+
+    /// Saves the invite and updates the notifications and the widgets, if the invite changed.
+    @discardableResult
+    private func inviteChanged(_ before: Invite) -> Bool {
+        guard invite != before else { return false }
+        SharedInvite.save(invite)
+        WidgetCenter.shared.reloadAllTimelines()
+        schedule()
+        return true
+    }
+
+    private func schedule() {
+        let invite = invite
+        scheduling = Task { [scheduling] in
+            await scheduling?.value
+            await InviteNotifications.schedule(invite)
         }
     }
 
@@ -96,7 +165,7 @@ final class Store {
 
     private func changed() {
         save()
-        refreshMenu()
+        offer()
         Task { await flush() }
     }
 

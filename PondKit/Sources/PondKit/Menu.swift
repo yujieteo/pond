@@ -1,8 +1,8 @@
 import Foundation
 
 /// One choice of the day's menu (R2), with the entry that "Done" records.
-public struct Choice: Equatable, Sendable {
-    public enum Source: Equatable, Sendable {
+public struct Choice: Codable, Equatable, Sendable {
+    public enum Source: Codable, Equatable, Sendable {
         case slot
         /// An earlier entry with a fun mark of "good" or "loved it".
         case enjoyed(id: String)
