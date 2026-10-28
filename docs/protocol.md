@@ -2,7 +2,7 @@
 
 The phone sends each change to an entry to the server as one signed request.
 The server keeps the newest revision of each entry, and nothing else.
-`server/pond_save.goose` is the server side. `PondKit/Sources/PondKit/Entry.swift` is the phone side.
+`server/pond_save.goose` is the server side of a save, and `server/pond_read.goose` serves the entries back. `PondKit/Sources/PondKit/Entry.swift` is the phone side.
 
 ## The request
 
@@ -54,22 +54,40 @@ The data directory is `/var/www/pond/`. That is `/pond/` in the httpd chroot. Th
 | `entries/<id>.json` | The newest accepted body of entry `<id>`, byte for byte. The write is atomic. |
 | `entries/.lock` | An empty file for the lock. No id can have this name, because an id has no `.`. |
 
-The server needs write access to `entries/` only.
+pond_save needs write access to `entries/` only. pond_read needs read access to `entries/` and to the template only.
 
 To enrol a phone, put its public key in `keys/`. To revoke it, delete its file.
 The server then refuses new changes signed by that key, and keeps the entries that it saved before.
 The design has a signed `POST /pond/key` from the Mac enrol key (R7 in `docs/concepts.md`). A later task adds it. Until then, the Mac copies the key file over SSH.
 
-## The program
+## Reading
 
-The server is one CGI program under httpd and slowcgi. Goose compiles `pond_save.goose` to standalone C on the Mac, and the C is in the repository beside it.
-The C needs only a C compiler and libcrypto, so it builds static on OpenBSD and runs in the chroot.
-`pond_verify.h` and `pond_lock.h` are the only C that is not generated. `pond_verify.h` checks the signature with the EVP calls of libcrypto, which are the same in LibreSSL and OpenSSL. `pond_lock.h` locks with `flock`.
+pond_read serves the entries on `GET`, newest first: the later `date`, then on the same date the later change of the file.
+An entry whose newest revision is a `remove` is not served.
+pond_read sends only the public fields of the list above, so a file with any other field cannot put it on the stream.
+
+| Path | What it gives |
+|---|---|
+| `/pond/entries.json` | `{"entries":[{"entry":{...},"id":"e1","rev":2}, ...]}`, for the app. |
+| `/log/` (and `/log`) | The site template `/web/site/log/template.html` in the chroot, with the line `<!-- pond:entries -->` replaced by one `<article>` for each entry: the date, the title (a link if the entry has a web link), the `made` text and the interest. With no template, or no marker line, a plain page. |
+| `/log/feed.xml` | RSS 2.0: one item for each entry, with the title, the link, the `made` text, the id as `guid` and the date as `pubDate`. |
+
+All the text of an entry is escaped for HTML and XML. A `link` that does not start with `https://` or `http://` is not made a link. Reason: an entry must not put a script on the page.
+Any other path gets 404, and any other method gets 405.
+The `POND_TEMPLATE` variable changes the template path for the tests.
+On OpenBSD, pond_read unveils `entries/` and the template read only, and pledges `stdio rpath`. It cannot write.
+
+## The programs
+
+The server is two CGI programs under httpd and slowcgi: pond_save for `POST /pond/entry`, and pond_read for the paths above. Reason: two programs let pond_read run with no write access.
+Goose compiles each `.goose` file to standalone C on the Mac, and the C is in the repository beside it.
+The C needs only a C compiler, and libcrypto for pond_save, so it builds static on OpenBSD and runs in the chroot.
+`pond_verify.h`, `pond_lock.h` and `pond_read.h` are the only C that is not generated. `pond_read.h` does the unveil and the pledge, and gets the time of the last change of a file. `pond_verify.h` checks the signature with the EVP calls of libcrypto, which are the same in LibreSSL and OpenSSL. `pond_lock.h` locks with `flock`.
 
 ```
-server/build.sh c   # on the Mac, with GOOSE=<path to goose>: make pond_save.c again, then build
+server/build.sh c   # on the Mac, with GOOSE=<path to goose>: make the C again, then build
 server/build.sh     # build from the committed C
-server/test.sh      # run the built program against this protocol
+server/test.sh      # run the built programs against this protocol
 ```
 
 The OpenBSD build, the httpd and slowcgi lines and the proof in the chroot are a later task.
