@@ -58,7 +58,7 @@ Each requirement has a reason. The captain agreed each one in the grilling sessi
 
 ### Entry
 - **Purpose**: record one thing that you did.
-- **State**: id, revision, date, slot (optional), title, link (optional), made (optional), domain (optional for a note), mode, kind (media or note), device key id, signature, sent or waiting.
+- **State**: id, revision, date, slot (optional), title, link (optional), made (optional), domain (optional for a note), mode, kind (media or note), interest (optional, for a paper), device key id, signature, sent or waiting.
 - **Actions**: `record`, `edit`, `remove`, `restore`.
 - **Operational principle**: after you record "1987 - IEEE Standard on Piezoelectricity" with a link, it shows at the top of teoyujie.org/log and in the RSS feed. If you remove it, it goes from the stream.
 
@@ -110,7 +110,7 @@ Each requirement has a reason. The captain agreed each one in the grilling sessi
 
 | Object | Relationships | Calls-to-action | Attributes |
 |---|---|---|---|
-| **Entry** | has 0..1 Slot; has 0..1 Fun mark; belongs to 1 Cell (a note has 0); comes from 0..1 Choice or from 1 share; signed by 1 Device key | record, edit, remove, undo, mark fun | date, slot, title, link, made, domain, mode, kind, sent or waiting |
+| **Entry** | has 0..1 Slot; has 0..1 Fun mark; belongs to 1 Cell (a note has 0); comes from 0..1 Choice or from 1 share; signed by 1 Device key | record, edit, remove, undo, mark fun | date, slot, title, link, made, domain, mode, kind, interest, sent or waiting |
 | **Choice** | belongs to 1 Invite day; points to 1 Slot, 1 earlier Entry, 1 empty Cell or 1 Experiment | pick, unpick, done | label, source (slot, enjoyed, not visited, experiment) |
 | **Slot** | belongs to 1 Plan; has 0..n Entries; has 1 domain and 1 mode | add, edit, set days, remove, undo | days (every day or some weekdays), text, domain, mode, minutes, what you make |
 | **Plan** | has 1..n Slots; is 1 file in the site repo | edit, commit | file SHA, last commit, waiting changes |
