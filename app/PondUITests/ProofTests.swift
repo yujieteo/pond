@@ -34,7 +34,7 @@ final class ProofTests: XCTestCase {
     }
 
     /// Step 7: the invite notification at the invite time, a pick in it, the widgets with the pick, and "Done" in the
-    /// notification. The entry must then be on the server's /log/. Add the Home Screen widget (medium) and the
+    /// Home Screen widget. The entry must then be on the server's /log/. Add the Home Screen widget (medium) and the
     /// Lock Screen widget of Waldenlog by hand before the run, for their screenshots.
     func testInvite() throws {
         let shots = try XCTUnwrap(env["POND_SHOTS"], "set TEST_RUNNER_POND_SHOTS")

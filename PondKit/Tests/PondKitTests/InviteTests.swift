@@ -39,13 +39,26 @@ private func lovedChart() -> (Journal, String) {
     invite.offer(plan: plan, journal: &journal, now: wednesday(10), calendar: singapore)
     let days = invite.days.filter { $0.choices.contains { $0.source == .enjoyed(id: id) } }.map(\.date)
     #expect(days == ["2026-10-28"])
-    #expect(journal[id]?.offered == "2026-10-28")
+    #expect(journal[id]?.offered == nil, "a day not yet offered marks nothing")
 
     // The next day, today's choice is earlier and not offered again: 14 days later is the first day again.
     let thursday = singapore.date(byAdding: .day, value: 1, to: wednesday(10))!
     invite.offer(plan: plan, journal: &journal, now: thursday, calendar: singapore)
     #expect(invite.days.first?.date == "2026-10-29", "an earlier day goes, with no mark")
     #expect(invite.days.filter { $0.choices.contains { $0.source == .enjoyed(id: id) } }.map(\.date) == ["2026-11-11"])
+}
+
+@Test func aPastMarkSurvivesEachOfferOfTheNextDay() {
+    var (journal, id) = lovedChart()
+    var invite = Invite()
+    invite.offer(plan: plan, journal: &journal, now: wednesday(10), calendar: singapore)
+
+    let thursday = singapore.date(byAdding: .day, value: 1, to: wednesday(10))!
+    for minutes in [0, 5] {
+        invite.offer(plan: plan, journal: &journal, now: thursday + Double(minutes * 60), calendar: singapore)
+        #expect(journal[id]?.offered == "2026-10-28")
+        #expect(invite.days.filter { $0.choices.contains { $0.source == .enjoyed(id: id) } }.map(\.date) == ["2026-11-11"])
+    }
 }
 
 @Test func aDayNotYetOfferedGetsNewChoices() {

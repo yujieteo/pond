@@ -45,24 +45,25 @@ public struct Invite: Codable, Equatable, Sendable {
     }
 
     /// Makes the choices of each day not yet offered, from today for `daysAhead` days (docs/concepts.md, sync 1).
-    /// A day is offered when its notification time is past or when it has a pick: its choices then stay.
-    /// An earlier day goes, with no mark. Each "enjoyed recently" choice marks its record in `journal`,
-    /// so a record comes back at most once in `Menu.enjoyedGap` days (sync 5).
+    /// A day is offered when its notification time is past or when it has a pick: today's choices then stay.
+    /// An earlier day goes, with no mark. Each "enjoyed recently" choice of an offered day marks its record in `journal`,
+    /// so a record comes back at most once in `Menu.enjoyedGap` days (sync 5). The days not yet offered mark a copy only.
     public mutating func offer(plan: Plan, journal: inout Journal, now: Date, calendar: Calendar = .current) {
         let today = Menu.day(now, calendar)
-        let kept = days.filter { day in
-            day.date == today && (day.pick != nil || time(of: day.date, calendar: calendar).map { $0 <= now } ?? false)
+        let offered = days.filter { day in
+            day.pick != nil || time(of: day.date, calendar: calendar).map { $0 <= now } ?? false
         }
-        let keptDates = Set(kept.map(\.date))
-        for record in journal.records {
-            if let offered = record.offered, offered >= today, !keptDates.contains(offered) { journal.offer(record.id, on: nil) }
+        for day in offered {
+            for case .enjoyed(let id) in day.choices.map(\.source) { journal.offer(id, on: day.date) }
         }
+        let kept = offered.filter { $0.date == today }
+        var scratch = journal
         days = (0..<Invite.daysAhead).compactMap { ahead in
             guard let date = calendar.date(byAdding: .day, value: ahead, to: now) else { return nil }
             let day = Menu.day(date, calendar)
             if let kept = kept.first(where: { $0.date == day }) { return kept }
-            let choices = Array(Menu.choices(plan: plan, journal: journal, date: date, calendar: calendar).prefix(Invite.maxChoices))
-            for case .enjoyed(let id) in choices.map(\.source) { journal.offer(id, on: day) }
+            let choices = Array(Menu.choices(plan: plan, journal: scratch, date: date, calendar: calendar).prefix(Invite.maxChoices))
+            for case .enjoyed(let id) in choices.map(\.source) { scratch.offer(id, on: day) }
             return InviteDay(date: day, choices: choices)
         }
     }
