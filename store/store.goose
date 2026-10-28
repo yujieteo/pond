@@ -2,7 +2,8 @@
 // append-only segment file holds each accepted revision of each entry as a
 // record with a checksum. An index in memory finds the newest revision of an
 // entry by its id, and lists the entries newest first by date, or with one
-// tag. Each body stays byte for byte the signed request body.
+// tag. Each body stays byte for byte the signed request body, and a record
+// can keep the phone signature of its body, so that a peer can check it.
 // docs/store.md is the design; docs/protocol.md has the rules it keeps.
 //
 // The state is in globals, so a program (or a thread, which gets its own
@@ -32,17 +33,23 @@ extern "store_sync" fn sync_file(fd: i32) -> bool;
 extern "store_truncate" fn truncate_file(fd: i32, size: i64) -> bool;
 extern "store_sync_dir" fn sync_dir(path: const u8[:]) -> bool;
 
-// A record: the magic, the body length (u32, little-endian), the CRC-32C of
-// the length and the body (u32, little-endian), then the body. 0xFF is in
-// no UTF-8 text, so the magic is not in a JSON body.
+// A record: the magic, the payload length (u32, little-endian), the CRC-32C
+// of the length and the payload (u32, little-endian), then the payload. 0xFF
+// is in no UTF-8 text, so the magic is not in a JSON body. The payload is the
+// body, or the base64 signature of the body, a newline and the body. A body
+// starts with { or a space, and a signature with a base64 character.
 let MAGIC: u8[4] = [255, 80, 78, 68];
 let HEADER = 12;
 let MAX_BODY = 8192;
+let MAX_SIG = 255;
+let MAX_RECORD = MAX_BODY + 1 + MAX_SIG;
 
 // The index item of one entry: its newest revision.
 struct Entry {
     id: u8[..64],
     rev: i64,
+    rec: i64,           // the start of the record, in the segment
+    sig_len: i64,       // the signature at rec + HEADER, or 0
     at: i64,            // the start of the body, in the segment
     size: i64,          // the body length
     seq: i64,           // the number of the record in the segment: the order of the changes
@@ -156,22 +163,57 @@ fn meta(body: u8[:], out: u8[>..]&) -> Meta, bool {
     return m, true;
 }
 
-// The size of the record at offset at of data, if it has the magic, a length
-// of 1 to MAX_BODY and all of its bytes, or 0. The checksum can be bad.
-fn whole_at(at: i64) -> i64 {
-    guard at >= 0 && at + HEADER <= data.len else { return 0; }
-    guard data[at..at + 4] == MAGIC[..] else { return 0; }
-    let n = get_u32(data, at + 4) as i64;
-    guard n >= 1 && n <= MAX_BODY && at + HEADER + n <= data.len else { return 0; }
+// The size of the record at offset at of s, if it has the magic, a length
+// of 1 to MAX_RECORD and all of its bytes, or 0. The checksum can be bad.
+fn whole_at(s: u8[:], at: i64) -> i64 {
+    guard at >= 0 && at + HEADER <= s.len else { return 0; }
+    guard s[at..at + 4] == MAGIC[..] else { return 0; }
+    let n = get_u32(s, at + 4) as i64;
+    guard n >= 1 && n <= MAX_RECORD && at + HEADER + n <= s.len else { return 0; }
     return HEADER + n;
 }
 
-// The size of the whole record with a good checksum at offset at of data,
+// The size of the whole record with a good checksum at offset at of s,
 // or 0.
-fn record_at(at: i64) -> i64 {
-    let n = whole_at(at);
-    guard n > 0 && get_u32(data, at + 8) == checksum(data[at + 4..at + 8], data[at + HEADER..at + n]) else { return 0; }
+fn record_at(s: u8[:], at: i64) -> i64 {
+    let n = whole_at(s, at);
+    guard n > 0 && get_u32(s, at + 8) == checksum(s[at + 4..at + 8], s[at + HEADER..at + n]) else { return 0; }
     return n;
+}
+
+fn is_base64(c: u8) -> bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=';
+}
+
+// The length of the signature at the start of a payload: 0 if it has none,
+// -1 if it is not valid.
+fn sig_length(payload: u8[:]) -> i64 {
+    guard payload.len > 0 && is_base64(payload[0]) else { return 0; }
+    let k = find(payload, "\n");
+    let sig_ok = all(payload[..max(k, 0)]) { is_base64(it) };
+    guard k >= 1 && k <= MAX_SIG && sig_ok else { return -1; }
+    return k;
+}
+
+// The body of a payload, after its signature.
+fn body_of(payload: u8[:], sig_len: i64) -> const u8[:] {
+    return if sig_len > 0 { payload[sig_len + 1..] } else { payload[..] };
+}
+
+// F(sig, body) for each record in s, the bytes of whole records from a
+// peer. False if s has any bytes that are not a good record.
+fn each_in<F>(s: u8[:]) -> bool {
+    var at = 0;
+    while at < s.len {
+        let n = record_at(s, at);
+        guard n > 0 else { return false; }
+        let payload = s[at + HEADER..at + n];
+        let k = sig_length(payload);
+        guard k >= 0 else { return false; }
+        F(payload[..k], body_of(payload, k));
+        at += n;
+    }
+    return true;
 }
 
 // F(at, size, good) for each whole record in data from offset from, and for
@@ -181,7 +223,7 @@ fn walk<F>(from: i64) -> i64 {
     var at = from;
     var end = from;
     while at < data.len {
-        let n = record_at(at);
+        let n = record_at(data, at);
         if n > 0 {
             F(at, n, true);
             at += n;
@@ -194,7 +236,7 @@ fn walk<F>(from: i64) -> i64 {
             let k = find(data[next..], MAGIC[..]);
             guard k >= 0 else { break; }
             next += k;
-            if record_at(next) > 0 { found = true; break; }
+            if record_at(data, next) > 0 { found = true; break; }
             next += 1;
         }
         guard found else { break; }
@@ -205,12 +247,15 @@ fn walk<F>(from: i64) -> i64 {
 }
 
 // Puts the record at offset at in the index. A rev that is not higher than
-// the index has is an old revision, and changes nothing.
+// the index has is an old revision, and changes nothing. A record of a merge
+// can have the same rev and a body that sorts after the old one: it wins.
 fn index(at: i64, n: i64) {
-    let body = data[at + HEADER..at + n];
+    let payload = data[at + HEADER..at + n];
+    let sig_len = sig_length(payload);
+    let body = body_of(payload, max(sig_len, 0));
     let start = strs.len;
     let m, ok = meta(body, strs);
-    guard ok else {
+    guard sig_len >= 0 && ok else {
         strs.resize(start);
         damage.push(Damage { at: at, size: n });
         return;
@@ -218,12 +263,15 @@ fn index(at: i64, n: i64) {
     let seq = records;
     records++;
     let have = ::get(by_id, m.id);
+    let body_at = at + n - body.len;
     if have {
         let e .= entries[have];
-        guard m.rev > e.rev else { strs.resize(start); return; }
+        guard wins(m.rev, body, e.rev, data[e.at..e.at + e.size]) else { strs.resize(start); return; }
         e.rev = m.rev;
-        e.at = at + HEADER;
-        e.size = n - HEADER;
+        e.rec = at;
+        e.sig_len = sig_len;
+        e.at = body_at;
+        e.size = body.len;
         e.seq = seq;
         e.removed = m.removed;
         e.date_at = start;
@@ -233,7 +281,7 @@ fn index(at: i64, n: i64) {
     } else {
         by_id.insert(m.id, entries.len);
         entries.push(Entry {
-            id: m.id, rev: m.rev, at: at + HEADER, size: n - HEADER, seq: seq, removed: m.removed,
+            id: m.id, rev: m.rev, rec: at, sig_len: sig_len, at: body_at, size: body.len, seq: seq, removed: m.removed,
             date_at: start, date_len: m.date_len, tag_at: start + m.date_len, tag_len: m.tag_len,
         });
     }
@@ -261,7 +309,7 @@ fn catch_up() -> bool {
     let end = walk(start) { at, n, good =>
         if good { index(at, n); } else { damage.push(Damage { at: at, size: n }); }
     };
-    let damaged_end = whole_at(end) > 0;
+    let damaged_end = whole_at(data, end) > 0;
     if damaged_end { damage.push(Damage { at: end, size: size - end }); }
     data.resize(end);
     torn = size - end;
@@ -345,43 +393,65 @@ fn status_text(s: Status) -> const u8[:] {
     }
 }
 
+// The rule of a merge: the higher rev wins, and at the same rev the body
+// that sorts later. Each node picks the same body, so the nodes converge.
+fn wins(rev: i64, body: u8[:], old_rev: i64, old: u8[:]) -> bool {
+    return rev > old_rev || (rev == old_rev && compare(body, old) > 0);
+}
+
 // Saves body, the exact bytes of a signed request, as the newest revision of
 // its entry, with the rule of docs/protocol.md: the higher rev wins; the same
 // body again is a retry and changes nothing; any other body with a rev that
 // is not higher is refused. The second result is the rev that the store had
 // for the id, or 0. Created comes back only after the record is on the disk.
 // A store with damage at the end refuses all appends with Failed.
-fn append(body: u8[:]) -> Status, i64 {
+fn append(body: u8[:]) -> Status, i64 { return save(body, "", false); }
+
+// append, with sig, the base64 phone signature of body, in the record.
+fn append_signed(body: u8[:], sig: u8[:]) -> Status, i64 { return save(body, sig, false); }
+
+// append_signed for a body from a peer: at the same rev, the body that
+// sorts later wins (see wins).
+fn merge(body: u8[:], sig: u8[:]) -> Status, i64 { return save(body, sig, true); }
+
+fn save(body: u8[:], sig: u8[:], merging: bool) -> Status, i64 {
     guard writer else { return Status.Failed, 0; }
     var scratch: u8[>..] = [];
     let m, ok = meta(body, scratch);
-    guard ok else { return Status.Invalid, 0; }
+    let sig_ok = all(sig) { is_base64(it) };
+    guard ok && sig.len <= MAX_SIG && sig_ok else { return Status.Invalid, 0; }
     // The lock makes the rev check and the write one step for all the
     // processes and threads that have the store open.
     // A copy, as the caller's bytes can be in data, which catch_up can cut.
-    var own: u8[>..] = [];
-    own.append(body);
+    var payload: u8[>..] = [];
+    if sig.len > 0 {
+        payload.append(sig);
+        payload.push('\n');
+    }
+    payload.append(body);
     guard lock_file(lock_fd) else { return Status.Failed, 0; }
-    let status, rev = locked_append(own, m.id, m.rev);
+    let status, rev = locked_append(payload, payload.len - body.len, m.id, m.rev, merging);
     unlock_file(lock_fd);
     return status, rev;
 }
 
-fn locked_append(body: u8[:], id: u8[..64], rev: i64) -> Status, i64 {
+fn locked_append(payload: u8[:], body_at: i64, id: u8[..64], rev: i64, merging: bool) -> Status, i64 {
     guard catch_up() && torn == 0 else { return Status.Failed, 0; }
+    let body = payload[body_at..];
     let have = ::get(by_id, id);
     var old_rev = 0;
     if have {
         let e = entries[have];
         old_rev = e.rev;
-        if data[e.at..e.at + e.size] == body { return Status.Same, old_rev; }
-        guard rev > old_rev else { return Status.Conflict, old_rev; }
+        let old = data[e.at..e.at + e.size];
+        if old == body { return Status.Same, old_rev; }
+        guard rev > old_rev || (merging && wins(rev, body, old_rev, old)) else { return Status.Conflict, old_rev; }
     }
     var rec: u8[>..] = [];
     rec.append(MAGIC[..]);
-    put_u32(rec, body.len as! u32);
-    put_u32(rec, checksum(rec[4..8], body));
-    rec.append(body);
+    put_u32(rec, payload.len as! u32);
+    put_u32(rec, checksum(rec[4..8], payload));
+    rec.append(payload);
     let at = data.len;
     guard write_end(seg_fd, rec) && sync_file(seg_fd) else {
         // A short write leaves a torn record; the next write cuts it off.
@@ -404,6 +474,9 @@ fn get(id: u8[:]) -> Entry? {
 }
 
 fn body(e: Entry&) -> const u8[:] { data[e.at..e.at + e.size] }
+fn signature(e: Entry&) -> const u8[:] { data[e.rec + HEADER..e.rec + HEADER + e.sig_len] }
+// The whole record of the newest revision: its header, signature and body.
+fn record(e: Entry&) -> const u8[:] { data[e.rec..e.at + e.size] }
 fn date(e: Entry&) -> const u8[:] { strs[e.date_at..e.date_at + e.date_len] }
 fn tag(e: Entry&) -> const u8[:] { strs[e.tag_at..e.tag_at + e.tag_len] }
 
@@ -452,7 +525,12 @@ fn entry(i: i64) -> Entry& { entries[i] }
 // F(body) for each whole record in the segment, in the order of the
 // changes: old revisions too.
 fn each_record<F>() {
-    walk(0) { at, n, good => if good { F(data[at + HEADER..at + n]); } };
+    walk(0) { at, n, good =>
+        if good {
+            let payload = data[at + HEADER..at + n];
+            F(body_of(payload, max(sig_length(payload), 0)));
+        }
+    };
 }
 
 // Writes the newest revision of each entry to a new segment, which takes
@@ -475,7 +553,7 @@ fn locked_compact() -> bool {
     var next: u8[>..] = [];
     for i in keep {
         let e = entries[i];
-        next.append(data[e.at - HEADER..e.at + e.size]);
+        next.append(record(e));
     }
     var new_path: u8[..1024] = [];
     guard set_path(new_path, dir_path, "store.seg.new") else { return false; }

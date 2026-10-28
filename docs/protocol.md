@@ -85,7 +85,7 @@ The server is two CGI programs under httpd and slowcgi: pond_save for `POST /pon
 Goose compiles each `.goose` file to standalone C on the Mac, and the C is in the repository beside it.
 The C needs only a C compiler, and libcrypto for pond_save, so it builds static on OpenBSD and runs in the chroot.
 `render.goose` makes the pages of the read side. pond_read and the daemon pond_node (`docs/store.md`) both use it, so they serve the same bytes.
-`pond_verify.h`, `pond_lock.h`, `pond_read.h`, `pond_node.h`, `pond_net.h` and `pond_spawn.h` are the only C that is not generated. `pond_read.h` does the unveil and the pledge, and gets the time of the last change of a file. `pond_verify.h` checks the signature with the EVP calls of libcrypto, which are the same in LibreSSL and OpenSSL. `pond_lock.h` locks with `flock`.
+`pond_verify.h`, `pond_lock.h`, `pond_read.h`, `pond_node.h`, `pond_net.h`, `pond_sync.h` and `pond_spawn.h` are the only C that is not generated. `pond_sync.h` signs the sync requests of pond_node with the node key, and makes the SHA-256 of the index hash. `pond_read.h` does the unveil and the pledge, and gets the time of the last change of a file. `pond_verify.h` checks the signature with the EVP calls of libcrypto, which are the same in LibreSSL and OpenSSL. `pond_lock.h` locks with `flock`.
 
 ```
 server/build.sh c   # on the Mac, with GOOSE=<path to goose>: make the C again, then build

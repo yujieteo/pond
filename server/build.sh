@@ -11,7 +11,7 @@ if [ "${1:-}" = c ]; then
     (cd "$here" && "${GOOSE:-goose}" --standalone --include pond_verify.h --include pond_lock.h -o pond_save.c pond_save.goose)
     (cd "$here" && "${GOOSE:-goose}" --standalone --include pond_read.h -o pond_read.c pond_read.goose)
     (cd "$here" && "${GOOSE:-goose}" --standalone --include pond_verify.h --include pond_read.h --include pond_net.h \
-        --include pond_node.h --include ../store/store_io.h -o pond_node.c pond_node.goose)
+        --include pond_node.h --include pond_sync.h --include ../store/store_io.h -o pond_node.c pond_node.goose)
     (cd "$here" && "${GOOSE:-goose}" --standalone --include pond_net.h --include pond_spawn.h -o pond_shadow.c pond_shadow.goose)
 fi
 

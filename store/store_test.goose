@@ -46,6 +46,12 @@ fn body_of(id: u8[:]) -> const u8[:] {
     return store::body(e);
 }
 
+fn sig_of(id: u8[:]) -> const u8[:] {
+    let e = store::get(id);
+    guard e else { return ""; }
+    return store::signature(e);
+}
+
 fn listed_ids(out: u8[>..]&, items: const i64[:]) {
     for i, k in items {
         if k > 0 { out.push(' '); }
@@ -310,6 +316,45 @@ fn test_compact() {
     store::close();
 }
 
+// Signed records, and the rule of a merge from a peer.
+fn test_signed() {
+    let dir = fresh("signed");
+    guard store::open(dir, true) else { abort("cannot open"); }
+    let sig = "MEUCIQDsig+/=";
+    let p1 = put("s1", 1, "2026-10-28", "b");
+    var s, rev = store::append_signed(p1, sig);
+    let e = store::get("s1");
+    expect("a signed body is saved, with its signature beside it", is(s, store::Status.Created) && e && store::body(e) == p1 && store::signature(e) == sig);
+    s, rev = store::append_signed(put("s2", 1, "2026-10-28", "x"), "not base64\n");
+    expect("a signature that is not base64 is refused", is(s, store::Status.Invalid));
+    s, rev = store::append(put("s1", 1, "2026-10-28", "c"));
+    expect("an append at the same rev is refused, also with a body that sorts later", is(s, store::Status.Conflict));
+    s, rev = store::merge(put("s1", 1, "2026-10-28", "a"), sig);
+    expect("a merge at the same rev with a body that sorts first is refused", is(s, store::Status.Conflict) && body_of("s1") == p1);
+    let p1c = put("s1", 1, "2026-10-28", "c");
+    s, rev = store::merge(p1c, sig);
+    expect("a merge at the same rev with a body that sorts later wins", is(s, store::Status.Created) && body_of("s1") == p1c);
+    s, rev = store::merge(p1c, "b3RoZXI=");
+    expect("a merge of the same body with another signature changes nothing", is(s, store::Status.Same));
+    s, rev = store::merge(put("s1", 2, "2026-10-28", "a"), sig);
+    expect("a merge of a higher rev wins", is(s, store::Status.Created) && rev == 1);
+    s, rev = store::merge(p1c, sig);
+    expect("a merge of a lower rev is refused", is(s, store::Status.Conflict) && rev == 2);
+    var records: u8[>..] = [];
+    let e2 = store::get("s1");
+    if e2 { records.append(store::record(e2)); }
+    var got: u8[>..] = [];
+    var count = 0;
+    let whole = store::each_in(records) { g, b => got.append(b); count++; };
+    expect("the record of an entry reads back as its signature and body", whole && count == 1 && got == put("s1", 2, "2026-10-28", "a"));
+    records[20] ^= 1;
+    expect("a changed byte in a record from a peer is found", !store::each_in(records) { g, b => {} });
+    expect("a reader indexes signed records and the merge rule", store::open(dir, false)
+        && body_of("s1") == put("s1", 2, "2026-10-28", "a") && sig_of("s1") == sig && store::record_count() == 3);
+    expect("a compaction keeps the signature", store::open(dir, true) && store::compact() && sig_of("s1") == sig);
+    store::close();
+}
+
 // The race: writers in threads, each with the store open on its own, and
 // readers that refresh while the writers write.
 struct Done { created: i64 }
@@ -432,6 +477,7 @@ fn main() {
     test_torn();
     test_corrupt();
     test_compact();
+    test_signed();
     test_threads();
     test_speed();
     if fails == 0 { print("all pass"); } else { print(fails, " failed"); exit(1); }
