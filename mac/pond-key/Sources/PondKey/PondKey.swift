@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import PondKit
+import Security
 
 /// The Mac enrol key (R7 in docs/concepts.md): a Secure Enclave key, with the files of docs/protocol.md.
 public enum PondKey {
@@ -24,7 +25,7 @@ public enum PondKey {
             && name.utf8.allSatisfy { $0 == UInt8(ascii: "-") || (0x30...0x39).contains($0) || (0x41...0x5A).contains($0) || (0x61...0x7A).contains($0) }
     }
 
-    /// The server's file for the key, in /var/www/pond/keys.
+    /// The file for the key in keys/ of a local test server. The enrol key never goes in /var/www/pond/keys.
     public static func serverFileName(_ name: String) -> String { "\(name).pub" }
 
     /// The text of keys/<name>.pub: base64 of the SubjectPublicKeyInfo DER.
@@ -53,7 +54,11 @@ public enum PondKey {
         guard isValidName(name) else { throw Failure.badName(name) }
         let file = handleFile(name)
         guard !FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else { throw Failure.exists(file) }
-        let key = try SecureEnclave.P256.Signing.PrivateKey()
+        var error: Unmanaged<CFError>?
+        guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                                                           [.privateKeyUsage, .userPresence], &error)
+        else { throw error!.takeRetainedValue() as Error }
+        let key = try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         guard FileManager.default.createFile(atPath: file.path(percentEncoded: false), contents: key.dataRepresentation,
                                              attributes: [.posixPermissions: 0o600]) else { throw Failure.cannotWrite(file) }

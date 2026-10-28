@@ -2,7 +2,7 @@ import Foundation
 import PondKey
 
 let usage = """
-    usage: pond-key create <name>   make a Secure Enclave key; print keys/<name>.pub
+    usage: pond-key create <name>   make a Secure Enclave key; print its public key file
            pond-key sign <file>     print the Signature header value for the body in <file>
     """
 
@@ -17,7 +17,7 @@ do {
     case ("create", 2):
         let name = arguments.last!
         let key = try PondKey.create(name)
-        FileHandle.standardError.write(Data("Put this line in /var/www/pond/keys/\(PondKey.serverFileName(name)) on the server:\n".utf8))
+        FileHandle.standardError.write(Data("The public key file, keys/\(PondKey.serverFileName(name)) on a local test server only:\n".utf8))
         print(PondKey.publicKeyFile(key), terminator: "")
     case ("sign", 2):
         let body = try Data(contentsOf: URL(filePath: arguments.last!))
