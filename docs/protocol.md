@@ -1,4 +1,4 @@
-# Pond: save protocol
+# Pond: save and read protocol
 
 The phone sends each change to an entry to the server as one signed request.
 The server keeps the newest revision of each entry, and nothing else.
