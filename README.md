@@ -5,6 +5,7 @@ A fun, low-energy media and experiments companion: iOS app, signed log, stream o
 - `docs/protocol.md`: the signed save request, the server's replies and the read side.
 - `PondKit/`: the Swift package for the app: entry format and signing, the plan parser, the host-to-domain guess, and "One paper".
 - `server/`: the save service and the read service, in Goose, with the generated C beside them.
+- `store/`: the storage engine for the log, in Goose: one append-only segment file with a checksum for each record, and an index by id, date and tag. `docs/store.md` is the design. pond_save and pond_read do not use it yet.
 - `app/`: the iOS app, Waldenlog on the Home Screen: Today, the entry sheet, the phone key and the outbox.
 - `mac/pond-key/`: the Mac enrol key (R7 in `docs/concepts.md`): a command-line tool that makes a Secure Enclave key and signs request bodies.
 
@@ -12,6 +13,7 @@ A fun, low-energy media and experiments companion: iOS app, signed log, stream o
 
 ```
 server/build.sh && server/test.sh
+store/build.sh && store/test.sh
 swift test --package-path PondKit
 swift test --package-path mac/pond-key
 ```
