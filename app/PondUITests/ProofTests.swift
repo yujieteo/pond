@@ -1,7 +1,7 @@
 import XCTest
 
 /// The simulator proof of build step 6: enrol this phone's key on a local test server, record one entry
-/// and see it sent. Run it with a local test server (see app/README.md). TEST_RUNNER_POND_KEYS is the
+/// and see it sent. Run it with a local test server (see "The app" in README.md). TEST_RUNNER_POND_KEYS is the
 /// server's keys/ directory, and TEST_RUNNER_POND_SHOTS a directory for the screenshots.
 final class ProofTests: XCTestCase {
     @MainActor
