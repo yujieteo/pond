@@ -11,7 +11,7 @@ if [ "${1:-}" = c ]; then
 fi
 
 # OpenBSD has libcrypto in base. The Mac has none for programs, so use Homebrew's.
-crypto_cflags= crypto_libs=-lcrypto static=-static
+crypto_cflags='' crypto_libs=-lcrypto static=-static
 if [ "$(uname)" = Darwin ]; then
     ssl=$(brew --prefix openssl)
     crypto_cflags="-I$ssl/include" crypto_libs="-L$ssl/lib -lcrypto" static=
