@@ -2,7 +2,7 @@
 // This is phase 2 of docs/store.md: shadow mode. pond_save and the files in
 // entries/ stay the source of truth. The daemon takes each entry file that
 // has a good phone signature into its own store, and serves the same pages
-// as pond_read from the store: GET /pond/entries.json, /log/ and
+// as pond_read from the store: GET /pond/entries.json, /log, /log/ and
 // /log/feed.xml. pond_shadow compare finds each difference.
 //
 //   pond_node --pond <dir> --store <dir> --template <file> --port <n> [--wireguard <address>]
