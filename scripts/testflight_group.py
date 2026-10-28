@@ -70,7 +70,8 @@ def main(build, group):
     # A group with access to all builds gets each build itself, and the API refuses the add.
     if not g["attributes"]["hasAccessToAllBuilds"]:
         call(f"/betaGroups/{g['id']}/relationships/builds", {"data": [{"type": "builds", "id": b["id"]}]})
-    beta = included["buildBetaDetails"]["internalBuildState"]
+    # Just after VALID, the response can still omit the beta detail.
+    beta = included.get("buildBetaDetails", {}).get("internalBuildState", "UNKNOWN")
     print(f"version {version} build {build}: {state}, group {group}: {beta}")
 
 if __name__ == "__main__":
