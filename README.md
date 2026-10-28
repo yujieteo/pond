@@ -81,3 +81,15 @@ TEST_RUNNER_POND_KEYS="$dir/keys" TEST_RUNNER_POND_SHOTS=<screenshot dir> \
     xcodebuild test -project app/Pond.xcodeproj -scheme Pond -destination 'platform=iOS Simulator,name=iPhone 17'
 curl http://127.0.0.1:8787/log/
 ```
+
+## TestFlight
+
+`scripts/testflight.sh` archives the app, uploads it to App Store Connect and waits until the build is in the TestFlight group "Captain". Run it on the Mac after each merge:
+
+```
+scripts/testflight.sh
+```
+
+The build number is the number of minutes since 1 January 2026 (UTC). To set a different number, use `BUILD=<number>`. The version comes from the project.
+The script signs and uploads with the App Store Connect API key only. It reads `ASC_KEY_PATH`, `ASC_KEY_ID` and `ASC_ISSUER_ID`, and has defaults for the Mac. The Mac must have the Apple Distribution certificate and the "Waldenlog App Store" profile.
+The archive and the logs go into a temporary directory. The script stops after 60 minutes if processing is not complete.
