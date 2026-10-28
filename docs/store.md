@@ -205,8 +205,9 @@ At the start, the main thread opens the store as a writer and imports all the en
 
 The daemon reads one request on each connection, and closes the connection after the reply.
 
-- If the first byte is 1 (the FastCGI version), the request is FastCGI. httpd sends this.
-- Other requests are HTTP/1.x. The compare tool and the tests use HTTP.
+- The daemon speaks only FastCGI. httpd sends this.
+- If a request is not FastCGI, the daemon closes the connection with no reply.
+- Phase 3 adds the requests that sync needs.
 
 The daemon serves `GET /pond/entries.json`, `/log`, `/log/` and `/log/feed.xml`.
 Each reply has the same bytes as the reply of pond_read, because both programs use the same code in `server/render.goose`.
@@ -274,7 +275,7 @@ pond_shadow compare <pond_read> <pond dir> <template> <port>
 ```
 
 - It runs pond_read as slowcgi does, for each of the 4 paths.
-- It gets the same paths from the daemon on 127.0.0.1, over FastCGI and over HTTP.
+- It gets the same paths from the daemon on 127.0.0.1 over FastCGI.
 - It compares the bytes. For `entries.json`, it reports each entry that differs: an entry that only one side has, a different `rev`, different fields, or a different order. For the other pages, it reports the first line that differs.
 - The writer scans each second, so the tool tries a difference again after 2.5 s before it reports it.
 - It prints `no difference`, or one line for each difference. The exit status is 0 for no difference, 1 for a difference, and 2 if it cannot run.
@@ -289,6 +290,7 @@ Each run writes the date, then the result. This command prints nothing if no run
 Phase 5 starts after 3 weeks of hourly runs with only `no difference` lines.
 
 `pond_shadow` also has the commands `get` (one request) and `bench` (see [Measured results of the daemon](#measured-results-of-the-daemon)).
+With `fcgi`, these commands talk to the daemon. With `http`, they talk to an HTTP server, for a measure through httpd.
 
 ## Install
 
@@ -349,12 +351,13 @@ Until phase 3, only the server gets entries. On the desktop and the Mac, `entrie
 
 `server/test.sh` also tests the daemon. It starts `pond_node` on a test directory with port 0, and checks these points:
 
-- The daemon serves the same bytes as pond_read, over FastCGI and over HTTP, and imports each entry one time.
-- An unknown path gets 404, and a `POST` gets 405, over FastCGI and over HTTP.
+- The daemon serves the same bytes as pond_read, and imports each entry one time.
+- An unknown path gets 404, and a `POST` gets 405.
+- The daemon sends no reply to a request that is not FastCGI.
 - 3 saves of one date, in the name order a, m and z, come in the order z, m and a, as from pond_read.
 - An entry file with a signature of the wrong key is refused. The compare tool reports `only pond_read has forged rev 1`, and the daemon logs the refusal.
 - After a `remove`, the compare tool reports no difference.
-- 8 HTTP clients and 8 FastCGI clients get 400 good replies each.
+- 8 FastCGI clients get 400 good replies.
 - After a SIGKILL and a start, the compare tool reports no difference, and the store does not get the same records again.
 - Two entry files with the same time come in the order of pond_read.
 - `--wireguard 0.0.0.0` stops the daemon with exit status 1.
@@ -376,19 +379,19 @@ The real server was not measured, because this task does not change the server. 
 | 1 | 126 requests/s, p50 7.7 ms, p99 10.7 ms | 1,618 requests/s, p50 0.61 ms, p99 0.71 ms | 12.8 |
 | 8 | 176 requests/s, p50 40.2 ms, p99 103.5 ms | 1,843 requests/s, p50 4.3 ms, p99 5.9 ms | 10.5 |
 
-**Mac** (`server/bench.sh`, with no httpd). The bench tool connects to the daemon directly, and runs pond_read itself for CGI.
+**Mac** (`server/bench.sh`, with no httpd). The bench tool connects to the daemon directly over FastCGI, and runs pond_read itself for CGI.
 
-| Clients | CGI | Daemon, FastCGI | Daemon, HTTP | Daemon / CGI |
-|---|---|---|---|---|
-| 1 | 13 requests/s, p99 204.8 ms | 733 requests/s, p99 5.2 ms | 854 requests/s, p99 2.7 ms | 56 to 66 |
-| 8 | 43 requests/s, p99 611.9 ms | 2,524 requests/s, p99 11.5 ms | 2,369 requests/s, p99 15.7 ms | 55 to 59 |
+| Clients | CGI | Daemon, FastCGI | Daemon / CGI |
+|---|---|---|---|
+| 1 | 13 requests/s, p99 204.8 ms | 733 requests/s, p99 5.2 ms | 56 |
+| 8 | 43 requests/s, p99 611.9 ms | 2,524 requests/s, p99 11.5 ms | 59 |
 
 **Linux** (the NixOS desktop, 16 CPU threads, `server/bench.sh`, with no httpd):
 
-| Clients | CGI | Daemon, FastCGI | Daemon, HTTP | Daemon / CGI |
-|---|---|---|---|---|
-| 1 | 105 requests/s, p99 10.2 ms | 3,033 requests/s, p99 0.44 ms | 3,236 requests/s, p99 0.40 ms | 29 to 31 |
-| 8 | 879 requests/s, p99 11.9 ms | 22,415 requests/s, p99 0.49 ms | 22,584 requests/s, p99 0.48 ms | 25 to 26 |
+| Clients | CGI | Daemon, FastCGI | Daemon / CGI |
+|---|---|---|---|
+| 1 | 105 requests/s, p99 10.2 ms | 3,033 requests/s, p99 0.44 ms | 29 |
+| 8 | 879 requests/s, p99 11.9 ms | 22,415 requests/s, p99 0.49 ms | 25 |
 
 The targets are a p99 of `/log/` under 50 ms, and 10 times the throughput of CGI. The daemon meets both targets on each system.
 In the VM, the 2 CPUs run httpd, the bench tool and the daemon at the same time. Thus with 8 clients, the CPUs limit the daemon, and the ratio is lowest there.

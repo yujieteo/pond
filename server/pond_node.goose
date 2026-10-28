@@ -8,8 +8,8 @@
 //   pond_node --pond <dir> --store <dir> --template <file> --port <n> [--wireguard <address>]
 //
 // It listens on 127.0.0.1 and on the WireGuard address, and on no other
-// address. A connection speaks FastCGI (from httpd) or HTTP/1.1, and the
-// daemon tells them apart by the first byte.
+// address. A connection speaks FastCGI, from httpd. The daemon closes a
+// connection that does not.
 //
 // The threads: main accepts the connections and puts each on the queue for
 // Conn; the readers take them, each with the store open on its own; one
@@ -143,7 +143,7 @@ thread_fn writer(c: Config) {
 
 // The readers: one request on each connection.
 
-struct Request { fcgi: bool, id: i64, method: u8[..16], uri: u8[..4096] }
+struct Request { id: i64, method: u8[..16], uri: u8[..4096] }
 
 fn be16(s: u8[:], at: i64) -> i64 { ((s[at] as i64) << 8) | s[at + 1] }
 
@@ -195,30 +195,13 @@ fn fcgi_parse(buf: u8[:], r: Request&) -> i64 {
     return 1;
 }
 
-// The HTTP request line in buf, once the head has come in. 0 if buf has
-// only a part of the head, -1 if it is not valid, else 1. The daemon reads
-// no body: each path that it serves is a GET.
-fn http_parse(buf: u8[:], r: Request&) -> i64 {
-    guard find(buf, "\r\n\r\n") >= 0 || find(buf, "\n\n") >= 0 else { return 0; }
-    let line = trim(buf[..find(buf, "\n")]);
-    let sp = find(line, " ");
-    guard sp > 0 else { return -1; }
-    let rest = line[sp + 1..];
-    let sp2 = find(rest, " ");
-    guard sp2 > 0 && sp <= 16 && sp2 <= 4096 else { return -1; }
-    r.method.append(line[..sp]);
-    r.uri.append(rest[..sp2]);
-    return 1;
-}
-
 fn read_request(fd: i32, r: Request&) -> bool {
     var buf: u8[>..] = [];
     loop {
         guard pond_recv(fd, MAX_REQUEST - buf.len, buf) > 0 else { return false; }
-        r.fcgi = buf[0] == 1;
         r.method.clear();
         r.uri.clear();
-        let got = if r.fcgi { fcgi_parse(buf, r) } else { http_parse(buf, r) };
+        let got = fcgi_parse(buf, r);
         if got != 0 { return got > 0; }
         guard buf.len < MAX_REQUEST else { return false; }
     }
@@ -249,24 +232,6 @@ fn fcgi_reply(out: u8[>..]&, id: i64, cgi: u8[:]) {
     put_record(out, 3, id, [0, 0, 0, 0, 0, 0, 0, 0]);
 }
 
-// The CGI reply as an HTTP/1.1 reply. The daemon closes each connection.
-fn http_reply(out: u8[>..]&, cgi: u8[:]) {
-    let head_end = find(cgi, "\r\n\r\n");
-    let body = cgi[head_end + 4..];
-    out.append("HTTP/1.1 ");
-    each_split(cgi[..head_end], '\n') {
-        let line = trim(it);
-        if starts_with(line, "Status: ") { out.append(line[8..]); }
-    };
-    out.append("\r\n");
-    each_split(cgi[..head_end], '\n') {
-        let line = trim(it);
-        if !starts_with(line, "Status: ") { format(out, line, "\r\n"); }
-    };
-    format(out, "Content-Length: ", body.len, "\r\nConnection: close\r\n\r\n");
-    out.append(body);
-}
-
 // The items of the store, newest first, made again only after the store
 // changes.
 struct View { records: i64, size: i64, items: render::Item[>..] }
@@ -284,7 +249,7 @@ fn update(v: View&) {
 }
 
 fn serve(c: Config&, fd: i32, v: View&) {
-    var r = Request { fcgi: false, id: 0, method: [], uri: [] };
+    var r = Request { id: 0, method: [], uri: [] };
     guard read_request(fd, r) else { pond_close(fd); return; }
     update(v);
     var order: render::Item&[>..] = [];
@@ -292,7 +257,7 @@ fn serve(c: Config&, fd: i32, v: View&) {
     var cgi: u8[>..] = [];
     render::reply(cgi, r.method, r.uri, c.template, order);
     var out: u8[>..] = [];
-    if r.fcgi { fcgi_reply(out, r.id, cgi); } else { http_reply(out, cgi); }
+    fcgi_reply(out, r.id, cgi);
     pond_send(fd, out);
     pond_close(fd);
 }

@@ -1,8 +1,8 @@
 #!/bin/sh
 # Measures the read path on this computer: pond_read as slowcgi runs it
-# (one process for each request), then pond_node over FastCGI and over
-# HTTP, on a log of 1,000 entries that pond_save saved. Each line gives the
-# throughput, and the latency at the 50th and the 99th percentile.
+# (one process for each request), then pond_node over FastCGI, on a log of
+# 1,000 entries that pond_save saved. Each line gives the throughput, and
+# the latency at the 50th and the 99th percentile.
 # docs/store.md has the results. Needs openssl. Run build.sh first.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -34,7 +34,6 @@ port=$(sed -n 's/^listening on 127.0.0.1 port //p' "$work/node.out")
 for clients in 1 8; do
     "$here/pond_shadow" bench cgi "$here/pond_read" "$work" "$work/template.html" /log/ "$clients" 100
     "$here/pond_shadow" bench fcgi "$port" /log/ "$clients" 2000
-    "$here/pond_shadow" bench http "$port" /log/ "$clients" 2000
 done
 kill "$node"
 wait "$node" 2> /dev/null || true

@@ -180,8 +180,8 @@ compare() { # the exit status of pond_shadow compare; its output in $work/compar
     "$here/pond_shadow" compare "$here/pond_read" "$work" "$work/template.html" "$port" > "$work/compare" || status=$?
     echo "$status"
 }
-code() { # fcgi|http uri [method]: the status code of a reply of pond_node
-    "$here/pond_shadow" get "$1" "$port" "$2" ${3:-} | sed -n 's/^Status: \([0-9]*\).*/\1/p'
+code() { # uri [method]: the status code of a reply of pond_node
+    "$here/pond_shadow" get fcgi "$port" "$1" ${2:-} | sed -n 's/^Status: \([0-9]*\).*/\1/p'
 }
 segment_size() {
     wc -c < "$work/store/store.seg" | tr -d ' '
@@ -190,10 +190,9 @@ segment_size() {
 start_node
 expect "pond_node reads the entry files and serves the same bytes as pond_read" 0 "$(compare)"
 expect "pond_node imports each entry once" 2 "$(grep -c '^pond_node: took' "$work/node.log")"
-for kind in fcgi http; do
-    expect "an unknown path is not found over $kind" 404 "$(code $kind /other)"
-    expect "a POST is refused over $kind" 405 "$(code $kind /log/ POST)"
-done
+expect "pond_node does not find an unknown path" 404 "$(code /other)"
+expect "pond_node refuses a POST" 405 "$(code /log/ POST)"
+expect "pond_node sends no reply to a request that is not FastCGI" "" "$("$here/pond_shadow" get http "$port" /log/ 2> /dev/null || true)"
 
 # Three saves in the same second, 20 ms apart (2 ticks of the clock of
 # OpenBSD), made in an order that is not the order of their names:
@@ -222,8 +221,6 @@ body remove3 '{"v":1,"op":"remove","id":"e3","rev":2,"key":"phone"}'
 post "$work/remove3" "$(sign "$work/phone.pem" < "$work/remove3")" > /dev/null
 expect "pond_node takes a remove" 0 "$(compare)"
 
-out=$("$here/pond_shadow" bench http "$port" /log/ 8 50)
-expect "8 HTTP clients at the same time get 400 good replies" yes "$(echo "$out" | grep -q '400 requests from 8 clients, 0 errors' && echo yes || echo no)"
 out=$("$here/pond_shadow" bench fcgi "$port" /pond/entries.json 8 50)
 expect "8 FastCGI clients at the same time get 400 good replies" yes "$(echo "$out" | grep -q '400 requests from 8 clients, 0 errors' && echo yes || echo no)"
 

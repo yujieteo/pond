@@ -6,12 +6,13 @@
 //   pond_shadow bench cgi <pond_read> <pond dir> <template> <uri> <clients> <requests>
 //
 // compare gets each page from pond_read, and from pond_node on 127.0.0.1
-// over FastCGI and over HTTP, and reports each difference. The exit status
-// is 0 for no difference, 1 for a difference and 2 if a page did not come.
-// get prints one reply of pond_node to a GET, or to another method. bench
-// sends requests from <clients> threads at the same time, each <requests>
-// in a sequence, and prints the throughput and the latency. cgi runs
-// pond_read for each request, as slowcgi does.
+// over FastCGI, and reports each difference. The exit status is 0 for no
+// difference, 1 for a difference and 2 if a page did not come. get prints
+// one reply to a GET, or to another method. bench sends requests from
+// <clients> threads at the same time, each <requests> in a sequence, and
+// prints the throughput and the latency. fcgi talks to pond_node. http
+// talks to an HTTP server, for a measure through httpd. cgi runs pond_read
+// for each request, as slowcgi does.
 
 import std;
 import os;
@@ -25,7 +26,7 @@ extern fn pond_send(fd: i32, data: const u8[:]) -> bool;
 extern fn pond_close(fd: i32);
 extern fn pond_run_cgi(program: const u8[:], env: const u8[:], out: u8[>..]&) -> bool;
 
-let PAGES = ["/pond/entries.json", "/log/", "/log/feed.xml"];
+let PAGES = ["/pond/entries.json", "/log", "/log/", "/log/feed.xml"];
 // pond_node reads the entry files once each second.
 let RETRY_MS = 2500;
 
@@ -34,7 +35,7 @@ fn fail(why: u8[:]) {
     exit(2);
 }
 
-// The target of a request: pond_node over FastCGI or HTTP, or pond_read.
+// The target of a request: pond_node over FastCGI, an HTTP server, or pond_read.
 struct Target { kind: u8[..8], port: i32, program: u8[..1024], pond: u8[..1024], template: u8[..1024] }
 
 fn put_record(out: u8[>..]&, kind: u8, content: u8[:]) {
@@ -69,23 +70,8 @@ fn fcgi_stdout(rec: u8[:], out: u8[>..]&) -> bool {
     return false;
 }
 
-// An HTTP reply in the form of a CGI reply: the Status line, the other
-// lines of the head but Content-Length and Connection, and the body.
-fn cgi_of_http(reply: u8[:], out: u8[>..]&) -> bool {
-    let head_end = find(reply, "\r\n\r\n");
-    guard starts_with(reply, "HTTP/1.1 ") && head_end > 0 else { return false; }
-    var first = true;
-    each_split(reply[..head_end], '\n') {
-        let line = trim(it);
-        if first { format(out, "Status: ", line[9..], "\r\n"); first = false; }
-        else if !starts_with(line, "Content-Length: ") && !starts_with(line, "Connection: ") { format(out, line, "\r\n"); }
-    };
-    out.append("\r\n");
-    out.append(reply[head_end + 4..]);
-    return true;
-}
-
-// One reply to GET uri, as a CGI reply. False if it did not come.
+// One reply to GET uri: a CGI reply, or the HTTP reply from an HTTP server.
+// False if it did not come.
 fn get(t: Target&, uri: u8[:], out: u8[>..]&) -> bool { return request(t, "GET", uri, out); }
 
 fn request(t: Target&, method: u8[:], uri: u8[:], out: u8[>..]&) -> bool {
@@ -116,7 +102,8 @@ fn request(t: Target&, method: u8[:], uri: u8[:], out: u8[>..]&) -> bool {
     }
     pond_close(fd);
     guard ok else { return false; }
-    return if t.kind == "fcgi" { fcgi_stdout(reply, out) } else { cgi_of_http(reply, out) };
+    guard t.kind == "fcgi" else { out.append(reply); return true; }
+    return fcgi_stdout(reply, out);
 }
 
 fn target(kind: u8[:], port: i64) -> Target {
@@ -210,18 +197,13 @@ fn differences(read: Target&, lines: u8[>..]&) -> i64 {
     for uri in PAGES {
         var want: u8[>..] = [];
         guard get(read, uri, want) else { format(lines, "pond_read gave no reply for ", uri, "\n"); return 2; }
-        var fcgi: u8[>..] = [];
-        var http: u8[>..] = [];
-        let f = target("fcgi", read.port);
-        let h = target("http", read.port);
-        guard get(f, uri, fcgi) && get(h, uri, http) else { format(lines, "pond_node gave no reply for ", uri, "\n"); return 2; }
-        for got, k in [fcgi[..], http[..]] {
-            guard got != want && (k == 0 || http != fcgi) else { continue; }
-            count++;
-            let over = if k == 1 { "HTTP" } else if http == fcgi { "FastCGI and HTTP" } else { "FastCGI" };
-            format(lines, "differs: ", uri, " over ", over, "\n");
-            if uri == "/pond/entries.json" { report_entries(want, got, lines); } else { report_lines(want, got, lines); }
-        }
+        var got: u8[>..] = [];
+        let node = target("fcgi", read.port);
+        guard get(node, uri, got) else { format(lines, "pond_node gave no reply for ", uri, "\n"); return 2; }
+        guard got != want else { continue; }
+        count++;
+        format(lines, "differs: ", uri, "\n");
+        if uri == "/pond/entries.json" { report_entries(want, got, lines); } else { report_lines(want, got, lines); }
     }
     return if count > 0 { 1 } else { 0 };
 }
@@ -249,7 +231,7 @@ thread_fn client(t: Target, uri: u8[..1024], n: i64) {
     for k in n {
         let t0 = clock_ns();
         var reply: u8[>..] = [];
-        let ok = get(t, uri, reply) && starts_with(reply, "Status: 200");
+        let ok = get(t, uri, reply) && (starts_with(reply, "Status: 200") || starts_with(reply, "HTTP/1.1 200"));
         qput(Sample { ns: clock_ns() - t0, ok: ok });
     }
 }
@@ -306,6 +288,7 @@ fn main() {
         fail(str("usage: pond_shadow compare <pond_read> <pond dir> <template> <port>\n",
                  "       pond_shadow get <fcgi|http> <port> <uri> [method]\n",
                  "       pond_shadow bench <fcgi|http> <port> <uri> <clients> <requests>\n",
+                 "       fcgi talks to pond_node, http to an HTTP server such as httpd\n",
                  "       pond_shadow bench cgi <pond_read> <pond dir> <template> <uri> <clients> <requests>"));
     }
 }
