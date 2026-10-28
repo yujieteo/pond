@@ -36,10 +36,12 @@ fn reply(status: u8[:], content_type: u8[:], body: u8[:]) {
     flush_stdout();
 }
 
-// s with the characters that HTML and XML give a meaning escaped.
+// s with the characters that HTML and XML give a meaning escaped, and with no
+// control characters, which XML does not allow.
 fn format_escaped(out: u8[>..]&, s: u8[:]) {
     for c in s {
-        if c == '&' { out.append("&amp;"); }
+        if c < ' ' && c != '\t' && c != '\n' && c != '\r' { continue; }
+        else if c == '&' { out.append("&amp;"); }
         else if c == '<' { out.append("&lt;"); }
         else if c == '>' { out.append("&gt;"); }
         else if c == '"' { out.append("&quot;"); }
@@ -198,6 +200,9 @@ fn format_log(out: u8[>..]&, template: u8[:], order: Item&[:]) {
 // "2026-10-28" as an RFC 822 date for RSS, or false if it is not that form.
 fn format_rfc822(out: u8[>..]&, date: u8[:]) -> bool {
     guard date.len == 10 && date[4] == '-' && date[7] == '-' else { return false; }
+    for c, i in date {
+        guard i == 4 || i == 7 || (c >= '0' && c <= '9') else { return false; }
+    }
     let y, y_ok = parse_int(date[0..4]);
     let m, m_ok = parse_int(date[5..7]);
     let d, d_ok = parse_int(date[8..10]);

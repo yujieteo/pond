@@ -140,6 +140,11 @@ get /log/feed.xml | has "a link is escaped for XML" "<link>https://example.org/?
 get /log/ | hasnt "no field goes out as raw HTML" "<script>"
 entry js 202610290800 '{"date":"2026-10-29","link":"javascript:alert(1)","title":"js"}'
 get /log/ | hasnt "a link that is not a web link is not a link" "javascript:"
+entry neg 202610290600 '{"date":"-999-10-28","title":"neg\u0001ctl"}'
+feed=$(get /log/feed.xml)
+printf '%s' "$feed" | has "a feed with a bad date is served" "<title>negctl</title>"
+expect "a bad date gives no pubDate" 0 "$(printf '%s' "$feed" | sed -n '/<title>negctl</,/<\/item>/p' | grep -c pubDate || true)"
+expect "a control character is not in the feed" 0 "$(printf '%s' "$feed" | tr -d '\t\n\r' | LC_ALL=C grep -c '[[:cntrl:]]' || true)"
 
 entry private 202610290700 '{"date":"2026-10-29","experiment":"Feel it fully","fun":"loved it","notice":"hidden line","title":"private"}'
 for page in /pond/entries.json /log/ /log/feed.xml; do
