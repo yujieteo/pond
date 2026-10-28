@@ -13,7 +13,8 @@ export ASC_KEY_ID=${ASC_KEY_ID:-9J2RG4JQ3K}
 export ASC_ISSUER_ID=${ASC_ISSUER_ID:-a094cf6f-56a0-4812-9864-1ccc1f355432}
 TEAM=3DVDQLT8CC
 # The key has no access to cloud-managed certificates, so the export signs with the
-# local Apple Distribution certificate and the "Waldenlog App Store" profile.
+# local Apple Distribution certificate and the "Waldenlog App Store" and
+# "Pond Widget App Store" profiles. Both App IDs have the App Group group.org.teoyujie.pond.
 # Each upload needs a new, higher build number: the minutes since 1 January 2026 (UTC).
 BUILD=${BUILD:-$(( ($(date +%s) - 1767225600) / 60 ))}
 OUT=$(mktemp -d "${TMPDIR:-/tmp}/pond-testflight.XXXXXX")
@@ -31,7 +32,10 @@ cat > "$OUT/ExportOptions.plist" <<PLIST
 	<key>signingStyle</key><string>manual</string>
 	<key>signingCertificate</key><string>Apple Distribution</string>
 	<key>provisioningProfiles</key>
-	<dict><key>org.teoyujie.pond</key><string>Waldenlog App Store</string></dict>
+	<dict>
+		<key>org.teoyujie.pond</key><string>Waldenlog App Store</string>
+		<key>org.teoyujie.pond.widget</key><string>Pond Widget App Store</string>
+	</dict>
 	<key>uploadSymbols</key><true/>
 	<key>manageAppVersionAndBuildNumber</key><false/>
 </dict>
