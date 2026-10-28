@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- pond_node on macOS: a LaunchAgent of the user, in
+     ~/Library/LaunchAgents (docs/store.md). The install puts the home
+     directory in place of HOME. To add the WireGuard address, add two
+     strings to ProgramArguments: the wireguard option and the address. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.teoyujie.pond-node</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>HOME/bin/pond_node</string>
+		<string>--pond</string>
+		<string>HOME/Library/Application Support/pond-node/pond</string>
+		<string>--store</string>
+		<string>HOME/Library/Application Support/pond-node/store</string>
+		<string>--template</string>
+		<string>HOME/Library/Application Support/pond-node/pond/template.html</string>
+		<string>--port</string>
+		<string>8788</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>StandardErrorPath</key>
+	<string>HOME/Library/Logs/pond_node.log</string>
+</dict>
+</plist>

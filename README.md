@@ -4,8 +4,8 @@ A fun, low-energy media and experiments companion: iOS app, signed log, stream o
 - `docs/concepts.md`: the conceptual model.
 - `docs/protocol.md`: the signed save request, the server's replies and the read side.
 - `PondKit/`: the Swift package for the app: entry format and signing, the plan parser, the host-to-domain guess, and "One paper".
-- `server/`: the save service and the read service, in Goose, with the generated C beside them.
-- `store/`: the storage engine for the log, in Goose: one append-only segment file with a checksum for each record, and an index by id, date and tag. `docs/store.md` is the design. pond_save and pond_read do not use it yet.
+- `server/`: the save service, the read service and `pond_node`, the daemon of the store, in Goose, with the generated C beside them. `server/service/` has the service files of the daemon for OpenBSD, Linux and macOS.
+- `store/`: the storage engine for the log, in Goose: one append-only segment file with a checksum for each record, and an index by id, date and tag. `docs/store.md` is the design. `pond_node` keeps the store in shadow mode beside the entry files of pond_save.
 - `app/`: the iOS app, Waldenlog on the Home Screen: Today, the entry sheet, the phone key and the outbox.
 - `mac/pond-key/`: the Mac enrol key (R7 in `docs/concepts.md`): a command-line tool that makes a Secure Enclave key and signs request bodies.
 
@@ -18,7 +18,7 @@ swift test --package-path PondKit
 swift test --package-path mac/pond-key
 ```
 
-`server/test.sh` needs `openssl`. Two PondKit tests and one pond-key test run the built `server/pond_save`, so build the server first.
+`server/test.sh` needs `openssl`. `server/bench.sh` measures the read path of pond_read and of `pond_node`. Two PondKit tests and one pond-key test run the built `server/pond_save`, so build the server first.
 
 ## The Mac key
 

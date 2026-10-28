@@ -1,11 +1,13 @@
 #!/bin/sh
 # Runs the built pond_save and pond_read as slowcgi runs them (CGI variables,
-# the body on stdin) against docs/protocol.md. Needs openssl to make keys and to sign.
+# the body on stdin) against docs/protocol.md, then pond_node in shadow mode
+# beside them (docs/store.md). Needs openssl to make keys and to sign.
 # Run build.sh first.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+node=
+trap '[ -z "$node" ] || kill "$node" 2> /dev/null; rm -rf "$work"' EXIT
 mkdir "$work/keys" "$work/entries"
 fails=0
 
@@ -35,6 +37,7 @@ body put1 '{"v":1,"op":"put","id":"e1","rev":1,"key":"phone","entry":{"date":"20
 sig1=$(sign "$work/phone.pem" < "$work/put1")
 expect "a new entry is saved" 201 "$(post "$work/put1" "$sig1")"
 cmp -s "$work/put1" "$work/entries/e1.json" && expect "the file holds the exact body" same same || expect "the file holds the exact body" same different
+expect "the signature is kept beside the body" "$sig1" "$(cat "$work/entries/e1.sig")"
 
 expect "the same request again (a retry or a replay) changes nothing" 200 "$(post "$work/put1" "$sig1")"
 
@@ -54,7 +57,7 @@ body ghost '{"v":1,"op":"put","id":"e1","rev":3,"key":"ghost","entry":{"date":"2
 expect "an unknown key id is refused" 403 "$(post "$work/ghost" "$(sign "$work/phone.pem" < "$work/ghost")")"
 cmp -s "$work/put2" "$work/entries/e1.json" && expect "a refused request changes nothing" same same || expect "a refused request changes nothing" same different
 
-body big "$(head -c 8193 /dev/zero | tr '\0' 'x')"
+body big "$(dd if=/dev/zero bs=8193 count=1 2> /dev/null | tr '\0' 'x')"
 expect "a body over 8192 bytes is refused" 413 "$(post "$work/big" "")"
 
 body fun '{"v":1,"op":"put","id":"e2","rev":1,"key":"phone","entry":{"date":"2026-10-28","title":"an album","fun":"loved it"}}'
@@ -162,5 +165,94 @@ expect "a missing template gives a plain page" '<h1>Log</h1>' "$(get /log/ | gre
 expect "an unknown path is not found" 404 "$(get /other | sed -n 's/^Status: \([0-9]*\).*/\1/p')"
 got=$(env -i REQUEST_METHOD=POST REQUEST_URI=/log/ POND_DIR="$read" "$here/pond_read" < /dev/null | sed -n 's/^Status: \([0-9]*\).*/\1/p')
 expect "a POST to the read service is refused" 405 "$got"
+
+# pond_node in shadow mode, on the entries that pond_save keeps in $work.
+printf '<html>\n<main>\n<!-- pond:entries -->\n</main>\n</html>\n' > "$work/template.html"
+start_node() { # sets node and port
+    "$here/pond_node" --pond "$work" --store "$work/store" --template "$work/template.html" --port 0 \
+        > "$work/node.out" 2>> "$work/node.log" &
+    node=$!
+    while ! grep -q "port" "$work/node.out" && kill -0 "$node" 2> /dev/null; do sleep 0.1; done
+    port=$(sed -n 's/^listening on 127.0.0.1 port //p' "$work/node.out")
+}
+compare() { # the exit status of pond_shadow compare; its output in $work/compare
+    status=0
+    "$here/pond_shadow" compare "$here/pond_read" "$work" "$work/template.html" "$port" > "$work/compare" || status=$?
+    echo "$status"
+}
+code() { # fcgi|http uri [method]: the status code of a reply of pond_node
+    "$here/pond_shadow" get "$1" "$port" "$2" ${3:-} | sed -n 's/^Status: \([0-9]*\).*/\1/p'
+}
+segment_size() {
+    wc -c < "$work/store/store.seg" | tr -d ' '
+}
+
+start_node
+expect "pond_node reads the entry files and serves the same bytes as pond_read" 0 "$(compare)"
+expect "pond_node imports each entry once" 2 "$(grep -c '^pond_node: took' "$work/node.log")"
+for kind in fcgi http; do
+    expect "an unknown path is not found over $kind" 404 "$(code $kind /other)"
+    expect "a POST is refused over $kind" 405 "$(code $kind /log/ POST)"
+done
+
+# Three saves in the same second, 20 ms apart (2 ticks of the clock of
+# OpenBSD), made in an order that is not the order of their names:
+# pond_read and pond_node both list them by the change.
+for id in a-same m-same z-same; do
+    body "$id" '{"entry":{"date":"2026-11-01","title":"'"$id"'"},"id":"'"$id"'","key":"phone","op":"put","rev":1,"v":1}'
+    sign "$work/phone.pem" < "$work/$id" > "$work/$id.sig"
+done
+for id in a-same m-same z-same; do post "$work/$id" "$(cat "$work/$id.sig")" > /dev/null; sleep 0.02; done
+order=$(env -i REQUEST_METHOD=GET REQUEST_URI=/pond/entries.json POND_DIR="$work" "$here/pond_read" | grep -o '"id":"[a-z]-same"' | tr -d '\n')
+expect "pond_read lists saves in the same second by the change" '"id":"z-same""id":"m-same""id":"a-same"' "$order"
+expect "pond_node takes new saves, in the same order" 0 "$(compare)"
+
+body forged '{"v":1,"op":"put","id":"forged","rev":1,"key":"phone","entry":{"date":"2026-11-02","title":"forged"}}'
+cp "$work/forged" "$work/entries/forged.json"
+sign "$work/other.pem" < "$work/forged" > "$work/entries/forged.sig"
+expect "compare reports an entry file with no good signature" 1 "$(compare)"
+in_file() { # name text file
+    if grep -qF -- "$2" "$3"; then expect "$1" yes yes; else expect "$1" yes no; fi
+}
+in_file "compare names the entry that pond_node refused" "only pond_read has forged rev 1" "$work/compare"
+in_file "pond_node logs the refusal" "refused forged.json: no good signature" "$work/node.log"
+rm "$work/entries/forged.json" "$work/entries/forged.sig"
+
+body remove3 '{"v":1,"op":"remove","id":"e3","rev":2,"key":"phone"}'
+post "$work/remove3" "$(sign "$work/phone.pem" < "$work/remove3")" > /dev/null
+expect "pond_node takes a remove" 0 "$(compare)"
+
+out=$("$here/pond_shadow" bench http "$port" /log/ 8 50)
+expect "8 HTTP clients at the same time get 400 good replies" yes "$(echo "$out" | grep -q '400 requests from 8 clients, 0 errors' && echo yes || echo no)"
+out=$("$here/pond_shadow" bench fcgi "$port" /pond/entries.json 8 50)
+expect "8 FastCGI clients at the same time get 400 good replies" yes "$(echo "$out" | grep -q '400 requests from 8 clients, 0 errors' && echo yes || echo no)"
+
+size=$(segment_size)
+kill -9 "$node"
+wait "$node" 2> /dev/null || true
+start_node
+expect "after a kill, pond_node opens its store again and serves the same bytes" 0 "$(compare)"
+expect "after a kill, pond_node does not save the entries again" "$size" "$(segment_size)"
+kill "$node"
+wait "$node" 2> /dev/null || true
+
+# Two entry files with the same time: pond_read lists them in the order of
+# their names, and so does pond_node.
+for id in tie-b tie-a; do
+    body "$id" '{"entry":{"date":"2026-11-03","title":"'"$id"'"},"id":"'"$id"'","key":"phone","op":"put","rev":1,"v":1}'
+    cp "$work/$id" "$work/entries/$id.json"
+    sign "$work/phone.pem" < "$work/$id" > "$work/entries/$id.sig"
+    touch -t 202611030900 "$work/entries/$id.json"
+done
+start_node
+expect "pond_node lists entry files with the same time as pond_read does" 0 "$(compare)"
+kill "$node"
+wait "$node" 2> /dev/null || true
+node=
+
+status=0
+"$here/pond_node" --pond "$work" --store "$work/store" --template "$work/template.html" --port 0 --wireguard 0.0.0.0 \
+    > /dev/null 2>&1 || status=$?
+expect "pond_node refuses to listen on all addresses" 1 "$status"
 
 [ "$fails" = 0 ] && echo "all pass" || { echo "$fails failed"; exit 1; }

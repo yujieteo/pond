@@ -2,6 +2,8 @@
 .swiftpm/
 server/pond_save
 server/pond_read
+server/pond_node
+server/pond_shadow
 xcuserdata/
 store/store_tool
 store/store_test

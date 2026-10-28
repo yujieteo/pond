@@ -2,7 +2,7 @@
 
 The store is the storage engine for the entries of the log. It replaces one file for each entry with one append-only segment file.
 `store/store.goose` is the engine, and `store/store_io.h` has the few file calls that Goose does not have.
-This is phase 1 of 5: one node, with no daemon, no network and no sync. pond_save and pond_read do not use the store yet.
+Phase 1 of 5 is the engine on one node. Phase 2 is the daemon `pond_node` in shadow mode: see [The daemon](#the-daemon). There is no sync between nodes yet.
 
 The store keeps the rules of `docs/protocol.md`:
 
@@ -170,3 +170,229 @@ All the tests pass on these three systems. The numbers are from `store_test` and
 The time of an append is the time of the `fsync`. On macOS, `F_FULLFSYNC` waits for the disk itself, so it is the slowest.
 The VM does not wait for the disk of the desktop, so its `fsync` is fast. The real server will be slower.
 To check that the crash tests find faults, a test build had no cut of the torn record. The verify found damage after the second kill.
+
+## The daemon
+
+`server/pond_node` is a daemon that runs all the time on each node. It keeps the store, and it serves the read path from the store.
+Phase 2 runs it in shadow mode: pond_save and the entry files stay the source of truth (see [Shadow mode](#shadow-mode)).
+The daemon is the same Goose program on OpenBSD, Linux and macOS. `server/pond_net.h` has its socket calls in C.
+
+```
+pond_node --pond <dir> --store <dir> --template <file> --port <n> [--wireguard <address>]
+```
+
+| Option | What it is |
+|---|---|
+| `--pond` | The directory of pond_save, with `entries/` and `keys/`. The daemon only reads it. |
+| `--store` | The directory of the store. The daemon makes it if it is not there. |
+| `--template` | The page template of `/log/`, the same file that pond_read uses. |
+| `--port` | The TCP port on 127.0.0.1. Port 0 lets the system choose, for the tests. |
+| `--wireguard` | The WireGuard address of the node. The daemon listens on it with the same port. |
+
+### Threads
+
+The threads share no data. They send work to each other on typed Goose queues, and each thread has its own copy of the globals of the store.
+
+| Thread | Number | What it does |
+|---|---|---|
+| The acceptor | 1 | It waits for connections on 127.0.0.1 and on the WireGuard address, and puts each connection on the queue of the readers. If 1,024 connections wait on the queue, it closes the new connection. |
+| The readers | The number of CPU threads, 2 or more | Each reader takes a connection from the queue, reads one request, sends the reply and closes the connection. Each reader opens the store as a reader. It makes the list of the log again only when the store changed. |
+| The writer | 1 | It scans `entries/` each second, and appends each new body to the store. It is the only thread that writes. |
+
+At the start, the main thread opens the store as a writer and imports all the entry files. It listens before the import, but it starts the readers only after the import. Thus the daemon never serves a part of the log.
+
+### Requests
+
+The daemon reads one request on each connection, and closes the connection after the reply.
+
+- If the first byte is 1 (the FastCGI version), the request is FastCGI. httpd sends this.
+- Other requests are HTTP/1.x. The compare tool and the tests use HTTP.
+
+The daemon serves `GET /pond/entries.json`, `/log`, `/log/` and `/log/feed.xml`.
+Each reply has the same bytes as the reply of pond_read, because both programs use the same code in `server/render.goose`.
+Each other path gets 404, and each other method gets 405, as from pond_read.
+A request can have 64 KB or less. Each read and each write on a connection has a time limit of 5 s. Reason: a slow client must not hold a reader.
+
+### Where the daemon listens
+
+- The daemon listens on 127.0.0.1, and on the `--wireguard` address if it is given. It listens on no other address.
+- The `--wireguard` address must be a numeric address. The daemon refuses 0.0.0.0 and `::`, and stops. Reason: a mistake in the flags must not open the daemon on a public address.
+- httpd sends the public requests to the daemon on 127.0.0.1. In phase 3, the other nodes connect on the WireGuard address.
+
+### Limits on each system
+
+| System | The limits |
+|---|---|
+| OpenBSD | Before the threads start, the daemon calls `unveil` on `entries/` and `keys/` (read), the store (read, write and create) and the template (read). Then it calls `pledge("stdio rpath wpath cpath flock inet")`. `server/pond_node.h` has this code. rc.d runs the daemon as the user `_pondnode`. |
+| Linux | The systemd unit `server/service/pond-node.service` gives a dynamic user, a read-only file system other than the store, a filter of system calls, and IPv4 and IPv6 sockets only. `systemd-analyze security` gives 1.2 ("OK"). |
+| macOS | The launchd agent `server/service/org.teoyujie.pond-node.plist` runs the daemon as the user of the Mac. macOS has no `pledge`, so the Mac has the weakest limits. |
+
+## Shadow mode
+
+In phase 2, pond_save continues to write the entry files, and pond_read continues to serve the public site.
+The daemon imports the entry files into the store, and serves the same pages beside pond_read. Nobody reads the pages of the daemon yet.
+The compare tool finds each difference. After 3 weeks with zero differences, phase 5 makes the store the source of truth.
+
+### The import
+
+pond_save now writes the signature of each body to `entries/<id>.sig`, before it writes the body. Reason: the daemon checks the phone signature of each body that it imports.
+The signature goes first. Thus a body on the disk has its own signature, or the signature of the next body for a short time. The daemon refuses the body in that time, and takes the next body at the next scan.
+
+The writer scans `entries/` each second. It takes each `.json` file whose time or `.sig` time changed since the last scan. For each file, it does these steps:
+
+1. If the store has the same body as the newest revision, it does nothing.
+2. It checks the signature with the key in `keys/` that the body names. If the signature is not good, it refuses the body.
+3. It appends the body to the store, with the rule of the store: the higher `rev` wins.
+
+The log of the daemon has a line for each change:
+
+| Log line | Cause |
+|---|---|
+| `took <id>.json` | The store has the body now. |
+| `refused <id>.json: no good signature from a key in keys/` | The file has no `.sig` file, a bad signature, or a key that is not in `keys/` now. |
+| `refused <id>.json: the store has rev <n>` | The store has a higher `rev`. |
+| `refused <id>.json: not a valid body` | The body does not have the fields of the store. |
+| `cannot save <id>.json in the store` | The append failed. The writer tries again at the next scan. |
+
+A refused file stays a difference between pond_read and the daemon, so the compare tool reports it.
+pond_save is not on the server yet, so each entry on the server will have its `.sig` file. An entry file that a person adds by hand has no `.sig` file, and the daemon refuses it.
+If an operator removes a key from `keys/`, pond_read continues to serve the old entries of that key, but the daemon does not import a new body of that key.
+The protocol removes an entry with a `remove` body, not with a delete of the file. If a person deletes an entry file, the store keeps the entry, and the compare tool reports it.
+
+### The order of the entries
+
+pond_read lists the entries of one date in the order of the times of their files, the newest first. The store lists them in the order of its records.
+Thus the writer takes the changed files of one scan in the order of their times. Then the two lists have the same order.
+On OpenBSD, a file time has the resolution of a clock tick (about 10 ms), so two files can have the same time. pond_read then lists them in the order of their names. The writer takes files with the same time in the reverse order of their names, so the daemon lists them in the same order.
+
+### The compare tool
+
+`server/pond_shadow` compares the daemon with pond_read:
+
+```
+pond_shadow compare <pond_read> <pond dir> <template> <port>
+```
+
+- It runs pond_read as slowcgi does, for each of the 4 paths.
+- It gets the same paths from the daemon on 127.0.0.1, over FastCGI and over HTTP.
+- It compares the bytes. For `entries.json`, it reports each entry that differs: an entry that only one side has, a different `rev`, different fields, or a different order. For the other pages, it reports the first line that differs.
+- The writer scans each second, so the tool tries a difference again after 2.5 s before it reports it.
+- It prints `no difference`, or one line for each difference. The exit status is 0 for no difference, 1 for a difference, and 2 if it cannot run.
+
+On the server, run the tool each hour as `_pondnode`. Add this line with `crontab -u _pondnode -e`:
+
+```
+0 * * * * (date -u; /usr/local/bin/pond_shadow compare /var/www/cgi-bin/pond_read /var/www/pond /var/www/web/site/log/template.html 8788) >> /var/pond-node/compare.log 2>&1
+```
+
+Each run writes the date, then the result. This command prints nothing if no run found a difference: `grep -v -e '^no difference$' -e UTC /var/pond-node/compare.log`.
+Phase 5 starts after 3 weeks of hourly runs with only `no difference` lines.
+
+`pond_shadow` also has the commands `get` (one request) and `bench` (see [Measured results of the daemon](#measured-results-of-the-daemon)).
+
+## Install
+
+The files are in `server/service/`. Each file has the paths of its system. Build on the node with `server/build.sh` first.
+
+### OpenBSD (the server)
+
+1. Install the programs and the rc.d script:
+   ```
+   install -m 755 server/pond_node server/pond_shadow /usr/local/bin/
+   install -m 555 server/service/pond_node.rc /etc/rc.d/pond_node
+   ```
+2. Make the user and the store directory:
+   ```
+   useradd -L daemon -g =uid -s /sbin/nologin -d /var/empty _pondnode
+   install -d -o _pondnode -m 700 /var/pond-node
+   ```
+3. Add the lines of `server/service/httpd.conf` to `/etc/httpd.conf`. They add a server on 127.0.0.1 port 8789 that sends the 4 paths to the daemon. The public server does not change in phase 2.
+4. Check the configuration with `httpd -n`.
+5. Start the daemon and load the new httpd configuration:
+   ```
+   rcctl enable pond_node
+   rcctl start pond_node
+   rcctl reload httpd
+   ```
+6. Add the cron line of the compare tool (see [The compare tool](#the-compare-tool)).
+7. Read the log of the daemon in `/var/log/daemon`. The first line gives the number of entries in the store.
+
+To add the WireGuard address, run `rcctl set pond_node flags` with the flags of the script and `--wireguard <address>`.
+
+### Linux (the NixOS desktop)
+
+1. Build with OpenSSL: `nix-shell -p openssl gcc --run server/build.sh`.
+2. Install `server/pond_node` as `/usr/local/bin/pond_node`.
+3. Install `server/service/pond-node.service` as `/etc/systemd/system/pond-node.service`.
+4. Start the daemon: `systemctl daemon-reload && systemctl enable --now pond-node`.
+
+On NixOS, `/etc` is read-only. Put the settings of the unit in `systemd.services.pond-node` of the system configuration, with the path of the program in the Nix store.
+
+### macOS (the Mac)
+
+1. Install the program and make the directories:
+   ```
+   mkdir -p ~/bin "$HOME/Library/Application Support/pond-node/pond/entries" "$HOME/Library/Application Support/pond-node/pond/keys"
+   cp server/pond_node ~/bin/
+   ```
+2. Copy the page template to `~/Library/Application Support/pond-node/pond/template.html`.
+3. Install the agent with the home directory in place of `HOME`:
+   ```
+   sed "s|HOME|$HOME|g" server/service/org.teoyujie.pond-node.plist > ~/Library/LaunchAgents/org.teoyujie.pond-node.plist
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.teoyujie.pond-node.plist
+   ```
+4. Read the log in `~/Library/Logs/pond_node.log`.
+
+Until phase 3, only the server gets entries. On the desktop and the Mac, `entries/` stays empty, and the daemon serves an empty log.
+
+## Tests of the daemon
+
+`server/test.sh` also tests the daemon. It starts `pond_node` on a test directory with port 0, and checks these points:
+
+- The daemon serves the same bytes as pond_read, over FastCGI and over HTTP, and imports each entry one time.
+- An unknown path gets 404, and a `POST` gets 405, over FastCGI and over HTTP.
+- 3 saves of one date, in the name order a, m and z, come in the order z, m and a, as from pond_read.
+- An entry file with a signature of the wrong key is refused. The compare tool reports `only pond_read has forged rev 1`, and the daemon logs the refusal.
+- After a `remove`, the compare tool reports no difference.
+- 8 HTTP clients and 8 FastCGI clients get 400 good replies each.
+- After a SIGKILL and a start, the compare tool reports no difference, and the store does not get the same records again.
+- Two entry files with the same time come in the order of pond_read.
+- `--wireguard 0.0.0.0` stops the daemon with exit status 1.
+
+`server/bench.sh` saves 1,000 signed entries with pond_save, runs the compare tool, then measures `/log/` from pond_read and from the daemon.
+
+## Measured results of the daemon
+
+The tests of `server/test.sh` pass on macOS, Linux (NixOS) and OpenBSD 8.0. The numbers are from 2026-10-28, on a log of 1,000 entries, for `GET /log/`.
+The real server was not measured, because this task does not change the server. The OpenBSD VM has the same system and the same httpd and slowcgi setup.
+
+`pond_shadow bench` sends the requests from 1 or 8 client threads, and gives the requests each second and the time of each request at the 50th and the 99th percentile.
+"CGI" is one pond_read process for each request, as slowcgi runs it today. "Daemon" is pond_node.
+
+**OpenBSD 8.0 VM** (2 CPUs, on the desktop), through httpd, as the public site will use it. CGI is httpd, slowcgi and pond_read. Daemon is httpd and pond_node over FastCGI. The daemon ran under rc.d as `_pondnode`, with `pledge` and `unveil`, and the compare tool reported no difference.
+
+| Clients | CGI | Daemon | Daemon / CGI |
+|---|---|---|---|
+| 1 | 126 requests/s, p50 7.7 ms, p99 10.7 ms | 1,618 requests/s, p50 0.61 ms, p99 0.71 ms | 12.8 |
+| 8 | 176 requests/s, p50 40.2 ms, p99 103.5 ms | 1,843 requests/s, p50 4.3 ms, p99 5.9 ms | 10.5 |
+
+**Mac** (`server/bench.sh`, with no httpd). The bench tool connects to the daemon directly, and runs pond_read itself for CGI.
+
+| Clients | CGI | Daemon, FastCGI | Daemon, HTTP | Daemon / CGI |
+|---|---|---|---|---|
+| 1 | 13 requests/s, p99 204.8 ms | 733 requests/s, p99 5.2 ms | 854 requests/s, p99 2.7 ms | 56 to 66 |
+| 8 | 43 requests/s, p99 611.9 ms | 2,524 requests/s, p99 11.5 ms | 2,369 requests/s, p99 15.7 ms | 55 to 59 |
+
+**Linux** (the NixOS desktop, 16 CPU threads, `server/bench.sh`, with no httpd):
+
+| Clients | CGI | Daemon, FastCGI | Daemon, HTTP | Daemon / CGI |
+|---|---|---|---|---|
+| 1 | 105 requests/s, p99 10.2 ms | 3,033 requests/s, p99 0.44 ms | 3,236 requests/s, p99 0.40 ms | 29 to 31 |
+| 8 | 879 requests/s, p99 11.9 ms | 22,415 requests/s, p99 0.49 ms | 22,584 requests/s, p99 0.48 ms | 25 to 26 |
+
+The targets are a p99 of `/log/` under 50 ms, and 10 times the throughput of CGI. The daemon meets both targets on each system.
+In the VM, the 2 CPUs run httpd, the bench tool and the daemon at the same time. Thus with 8 clients, the CPUs limit the daemon, and the ratio is lowest there.
+On the Mac, each new TCP connection on 127.0.0.1 costs about 1 ms, also with a Python server. Thus the cause is the Mac, not the daemon.
+A CGI process on the Mac costs much more than on OpenBSD, so the Mac ratio is high. The VM ratio through httpd is the best estimate for the server.
+
+A first bench in the VM stopped for 20 minutes: some client threads slept in `connect` after the connection was made. The bench tool now uses a `connect` that does not block, with a `poll` of 100 ms at a time and a limit of 5 s.

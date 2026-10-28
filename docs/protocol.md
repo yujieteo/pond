@@ -52,6 +52,7 @@ The data directory is `/var/www/pond/`. That is `/pond/` in the httpd chroot. Th
 |---|---|
 | `keys/<key>.pub` | One enrolled device key: base64 of its SubjectPublicKeyInfo DER, as CryptoKit's `derRepresentation` writes it. |
 | `entries/<id>.json` | The newest accepted body of entry `<id>`, byte for byte. The write is atomic. |
+| `entries/<id>.sig` | The `Signature` header of that body, as it came. pond_save writes it before the body. pond_node checks the body against it (`docs/store.md`). |
 | `entries/.lock` | An empty file for the lock. No id can have this name, because an id has no `.`. |
 
 pond_save needs write access to `entries/` only. pond_read needs read access to `entries/` and to the template only.
@@ -62,7 +63,8 @@ The design has a signed `POST /pond/key` from the Mac enrol key (R7 in `docs/con
 
 ## Reading
 
-pond_read serves the entries on `GET`, newest first: the later `date`, then on the same date the later change of the file.
+pond_read serves the entries on `GET`, newest first: the later `date`, then on the same date the later change of the file, in nanoseconds.
+Reason: the outbox of the phone can send many changes in one second. Files with the same time (on OpenBSD, the time has the resolution of a tick of the clock) are in the order of their names.
 An entry whose newest revision is a `remove` is not served.
 pond_read sends only the public fields of the list above, so a file with any other field cannot put it on the stream.
 
@@ -82,7 +84,8 @@ On OpenBSD, pond_read unveils `entries/` and the template read only, and pledges
 The server is two CGI programs under httpd and slowcgi: pond_save for `POST /pond/entry`, and pond_read for the paths above. Reason: two programs let pond_read run with no write access.
 Goose compiles each `.goose` file to standalone C on the Mac, and the C is in the repository beside it.
 The C needs only a C compiler, and libcrypto for pond_save, so it builds static on OpenBSD and runs in the chroot.
-`pond_verify.h`, `pond_lock.h` and `pond_read.h` are the only C that is not generated. `pond_read.h` does the unveil and the pledge, and gets the time of the last change of a file. `pond_verify.h` checks the signature with the EVP calls of libcrypto, which are the same in LibreSSL and OpenSSL. `pond_lock.h` locks with `flock`.
+`render.goose` makes the pages of the read side. pond_read and the daemon pond_node (`docs/store.md`) both use it, so they serve the same bytes.
+`pond_verify.h`, `pond_lock.h`, `pond_read.h`, `pond_node.h`, `pond_net.h` and `pond_spawn.h` are the only C that is not generated. `pond_read.h` does the unveil and the pledge, and gets the time of the last change of a file. `pond_verify.h` checks the signature with the EVP calls of libcrypto, which are the same in LibreSSL and OpenSSL. `pond_lock.h` locks with `flock`.
 
 ```
 server/build.sh c   # on the Mac, with GOOSE=<path to goose>: make the C again, then build
@@ -90,4 +93,4 @@ server/build.sh     # build from the committed C
 server/test.sh      # run the built programs against this protocol
 ```
 
-The OpenBSD build, the httpd and slowcgi lines and the proof in the chroot are a later task.
+The httpd and slowcgi lines for pond_save and pond_read, and the proof in the chroot, are a later task. `docs/store.md` has the httpd lines for pond_node.
