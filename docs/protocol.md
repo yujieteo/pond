@@ -70,7 +70,7 @@ pond_read sends only the public fields of the list above, so a file with any oth
 
 | Path | What it gives |
 |---|---|
-| `/pond/entries.json` | `{"entries":[{"entry":{...},"id":"e1","rev":2}, ...]}`, for the app. |
+| `/pond/entries.json` | `{"entries":[{"entry":{...},"id":"e1","rev":2}, ...]}`, for the app. pond_node adds `"conflicts":[{"id":"e1","rev":2,"siblings":[{"entry":{...},"op":"put"},{"op":"remove"}]}, ...]` if an entry has more than one body at its top `rev` (`docs/store.md`). Each sibling has only the public fields. The app shows the siblings, and a save of the pick at `rev` + 1 replaces them. |
 | `/log/` (and `/log`) | The site template `/web/site/log/template.html` in the chroot, with the line `<!-- pond:entries -->` replaced by one `<article>` for each entry: the date, the title (a link if the entry has a web link), the `made` text and the interest. With no template, or no marker line, a plain page. |
 | `/log/feed.xml` | RSS 2.0: one item for each entry, with the title, the link, the `made` text, the id as `guid` and the date as `pubDate`. An item whose date is not `YYYY-MM-DD` in digits has no `pubDate`. |
 

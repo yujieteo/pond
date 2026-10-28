@@ -62,7 +62,7 @@ fn main() {
     env("REQUEST_URI", uri);
     var items: render::Item[>..] = [];
     if method == "GET" { items = load(entries_dir); }
-    render::reply(out, method, uri, template_path, newest_first(items));
+    render::reply(out, method, uri, template_path, newest_first(items), "");
     write_stdout(out);
     flush_stdout();
 }

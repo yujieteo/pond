@@ -17,14 +17,14 @@ The store keeps the rules of `docs/protocol.md`:
 |---|---|
 | `store::open(dir, write)` | Opens `dir/store.seg`. A writer makes the files if they are not there, and recovers after a crash (see [Recovery](#recovery)). A reader changes no file. |
 | `store::append(body)` | Saves a body with the rule above. The result is `Created`, `Same`, `Conflict` (with the saved `rev`), `Invalid` or `Failed`. `Created` comes back only after the record is on the disk. |
-| `store::append_signed(body, sig)` | The same, and the record keeps `sig`, the base64 phone signature of the body. `store::signature(e)` gives it back. |
-| `store::merge(body, sig)` | `append_signed` for a body from a peer, with the rule of a merge: at the same `rev`, the body that sorts later byte by byte wins (see [The rule of a merge](#the-rule-of-a-merge)). |
-| `store::record(e)` and `store::each_in(bytes)` | The whole record of an entry, as the segment has it, and the signature and body of each record in bytes from a peer. |
+| `store::merge(body, sig)` | Saves a body that a node acknowledged, and the record keeps `sig`, the base64 phone signature of the body. `store::signature(e)` gives it back. The rule is the rule of a merge: a different body at the same `rev` is `Created` as a sibling (see [The rule of a merge](#the-rule-of-a-merge)). |
+| `store::each_top(e)` and `store::conflicted(e)` | Each body at the top `rev` of an entry, in the order of the bodies: its siblings, then the entry. `conflicted` is true if the entry has siblings. |
+| `store::record(e)` and `store::each_in(bytes)` | The whole record of a revision, as the segment has it, and the signature and body of each record in bytes from a peer. |
 | `store::get(id)` | The newest revision of the entry, a `put` or a `remove`, or null. `store::body(e)` gives its exact bytes. |
 | `store::newest_first()` | The entries that are not removed: the later `date` first, then on the same date the later change. |
 | `store::with_tag(t)` | The same list, with only the entries whose tag is `t`. The tag of an entry is its `interest`. |
 | `store::refresh()` | Reads the records that other processes and threads appended after the last call. |
-| `store::compact()` | Writes a new segment with only the newest revision of each entry (see [Compaction](#compaction)). |
+| `store::compact()` | Writes a new segment with only the newest revision of each entry and its siblings (see [Compaction](#compaction)). |
 
 The engine accepts a body if it has an `id` (a name of `docs/protocol.md`), a `rev` of 1 or more, and `op` `put` with an `entry` that has a string `date`, or `op` `remove` with no `entry`.
 The engine does not check the signature or the public fields. pond_save does that before it saves.
@@ -63,6 +63,7 @@ The checksum finds damage. It is not a security check: the phone signature does 
 The index is in memory. The store makes it when it opens the segment, and changes it with each record.
 
 - **By id**: a dictionary from the `id` to one item. The item has the newest `rev`, the place of the body in the segment, the number of the record (the order of the changes), the date, the tag, and a flag for a `remove`.
+- **Siblings**: a list of the other bodies at the top `rev` of an entry, each with the same fields. At the top `rev`, the item of the entry is the body that sorts last byte by byte. Thus each node lists the same body. A record with a higher `rev` removes the siblings of its entry from the list.
 - **By date**: a list of the entries that are not removed, sorted by the date and then by the number of the record. The store sorts the list again only after a change.
 - **By tag**: a list of the entries that are not removed and have a tag, sorted by the tag, then in the order of the date list. `with_tag` finds the entries of one tag with a binary search. The store sorts this list again with the date list.
 
@@ -78,7 +79,7 @@ A Goose data stack holds the segment. `store/build.sh` sets 16 MB for each stack
 1. It reads the body and refuses it with `Invalid` if the body does not have the fields above. It copies the body.
 2. It locks `store.lock`.
 3. It reads the records that other writers appended since its last read. If the file has a torn record at the end, it cuts that record off the file. If the file has damage at the end, the result is `Failed`.
-4. It applies the rule. If the body is the same as the newest body, the result is `Same`. If the `rev` is not higher, the result is `Conflict`.
+4. It applies the rule. If the body is the same as a body at the top `rev`, the result is `Same`. If the `rev` is not higher, the result is `Conflict`. For `merge`, a different body at the same `rev` is a sibling, and the store writes it.
 5. It writes the record at the end of the file with one `write`, then calls `fsync`. On macOS it calls `fcntl(F_FULLFSYNC)`, because `fsync` on macOS does not empty the cache of the disk.
 6. It adds the record to the index, and releases the lock.
 
@@ -109,7 +110,7 @@ The sync pulls that revision from a peer again, and appends it after the damage 
 
 ## Compaction
 
-`compact` writes the newest record of each entry, a `remove` too, to `store.seg.new`, in the order of the changes. Then it calls `fsync` on the new file, renames it to `store.seg`, and calls `fsync` on the directory.
+`compact` writes the newest record of each entry, a `remove` too, and each sibling, to `store.seg.new`, in the order of the changes. Then it calls `fsync` on the new file, renames it to `store.seg`, and calls `fsync` on the directory.
 A crash at any point leaves the old segment or the new one at `store.seg`. Each one has all the newest revisions.
 A leftover `store.seg.new` from a crash does no harm. The next compaction makes it again from empty.
 Other processes see the new inode at `store.seg` at their next read, and read the new segment from the start.
@@ -132,7 +133,7 @@ With that flag, the variable `STORE_CRASH_AFTER=<n>` kills the process with SIGK
 - **The index**: the order by date and change, the list by tag with escapes, a change of tag, a removed entry, a change that moves an entry up, and a reader that opens the same store.
 - **Torn records**: a cut of a segment of 12 records at each byte (1,323 cuts). After each cut, a reader serves only the whole records, and a writer cuts the torn bytes off and appends. It also adds tails of zeros and of random bytes.
 - **Damage**: 2,000 trials that change 1 byte or a run of 1 to 64 bytes in a segment of 40 records. After each trial, the store serves all the records that the damage did not hit, serves no changed body, reports the damage, does not cut it, and refuses to compact. A change of 1 byte in the body of the last record is also damage: the writer reports it, does not cut it, and refuses to append. Zeros in place of the last record are a torn record: the writer cuts them off and appends.
-- **Signed records and merges**: a signature is kept beside its body and stays after a compaction. A merge at the same `rev` takes the body that sorts later and refuses the other. A merge of the same body with another signature changes nothing. A changed byte in records from a peer is found.
+- **Signed records and siblings**: a signature is kept beside its body and stays after a compaction. A merge of a different body at the same `rev` keeps both bodies as siblings, and the body that sorts last is the entry. A `remove` at the same `rev` as a `put` is a sibling too. A merge of a body that the store has at the top `rev`, with another signature, changes nothing. A reader and a compaction keep each sibling. A pick at `rev` + 1 replaces all the siblings, and the next compaction drops them. A changed byte in records from a peer is found.
 - **Compaction**: 201 records of 7 entries become 7 records. The newest bodies, the order and the rule stay the same, and a reader sees the new segment.
 - **Threads**: 8 writer threads make 150 appends each to 10 entries. Each writer uses the `rev` after the one that it saw last, as the outbox of the phone does after a 409. 2 reader threads call `refresh` at the same time and check what they see.
 
@@ -253,7 +254,7 @@ The writer scans `entries/` each second. It takes each `.json` file whose time o
 
 1. If the store has the same body as the newest revision, it does nothing.
 2. It checks the signature with the key in `keys/` that the body names. If the signature is not good, it refuses the body.
-3. It appends the body to the store, with its signature, with the rule of the store: the higher `rev` wins.
+3. It merges the body into the store, with its signature, with the rule of a merge: the higher `rev` wins, and a different body at the same `rev` is a sibling. Reason: pond_save acknowledged the body, and the store can have a body at the same `rev` from a peer.
 
 The log of the daemon has a line for each change:
 
@@ -308,7 +309,7 @@ Phase 3 makes a full copy of the store on each of the 3 nodes: the server, the d
 
 - Each node pulls from each peer, each 5 s, the revisions that it does not have. No node pushes.
 - Each node checks the phone signature of each body that it pulls, with its own `keys/`. It refuses a body with no good signature.
-- The highest `rev` of an entry wins. At the same `rev`, the body that sorts later byte by byte wins.
+- The highest `rev` of an entry wins. Each node keeps each different body at the same `rev` as a sibling, and the phone picks one.
 - Each sync request has a signature from the node key of the node that asks. A node refuses a request with no good signature from a key in its `nodes/`.
 
 ### A pull
@@ -316,9 +317,9 @@ Phase 3 makes a full copy of the store on each of the 3 nodes: the server, the d
 The syncer of node A does these steps for each peer B:
 
 1. It sends `index`, its name and its index hash. If B has the same hash, B replies with only its hash, and the pull stops.
-2. Else B replies with its hash, then `<id> <rev> <crc>` for each entry, in the order of its changes. `crc` is the CRC-32C of the body.
-3. A asks for each id where B has a higher `rev`, or the same `rev` with another `crc`, 100 ids in each request: `bodies`, its name, then the ids.
-4. B replies with the record of the newest revision of each id, as its segment has it: the header with the checksum, the signature and the body. A checks the checksum of each record.
+2. Else B replies with its hash, then `<id> <rev> <crc>` for each entry and each sibling, in the order of its changes. `crc` is the CRC-32C of the body.
+3. A asks for each id where B has a higher `rev`, or the same `rev` with a `crc` that A does not have at that `rev`, 100 ids in each request: `bodies`, its name, then the ids.
+4. B replies with the record of the newest revision of each id, and of each sibling, as its segment has it: the header with the checksum, the signature and the body. A checks the checksum of each record.
 5. A checks the phone signature of each body. The syncer puts each good body on the queue of the writer, and waits until the writer merged the batch.
 6. The writer merges each body with `store::merge`, between two scans of `entries/`.
 
@@ -327,15 +328,17 @@ The pulls of A also repair a revision that damage in the middle of its segment h
 
 ### The index hash
 
-The index hash is the SHA-256 of the newest revision of each entry, a `remove` too, in the order of the ids, each as `<id> <rev> <length>`, a newline and the body.
+The index hash is the SHA-256 of the newest revision of each entry, a `remove` too, and of each sibling, in the order of the ids, then of the bodies, each as `<id> <rev> <length>`, a newline and the body.
 Two nodes with the same hash have the same bodies. The signatures are not in the hash, because a body can have more than one good signature.
 `GET /pond/node` gives the hash and the number of listed entries.
 
 ### The rule of a merge
 
-The rule of `docs/protocol.md` refuses a different body at the same `rev`. For a merge from a peer, that rule is not enough. Two phones can save two bodies with the same `rev` on two nodes, and then each node keeps its own body for all time.
-Thus a merge takes the body that sorts later at the same `rev`. Each node makes the same choice, so the nodes converge. Reason: without the rule, the index hashes of the nodes never become the same.
-A local save keeps the rule of `docs/protocol.md`. A local save at the same `rev` as the store gets `Conflict`.
+The rule of `docs/protocol.md` refuses a different body at the same `rev`. For a merge, that rule is not enough. Two phones can save two bodies with the same `rev` on two nodes, and each node replies 201.
+Thus the store keeps each different body at the top `rev` as a sibling, on each node. Reason: a node acknowledged each body, so a drop of one body loses an acknowledged save.
+Each node has the same siblings after a sync, so the index hashes become the same. The entry is the body that sorts last, so each node lists the same body.
+`GET /pond/entries.json` lists each entry with siblings in `conflicts` (see `docs/protocol.md`). The phone picks one body, and saves it at `rev` + 1. That save replaces all the siblings.
+The import of `entries/` and the merge of a pulled body use this rule. pond_save keeps the rule of `docs/protocol.md` on the files of its node: a save at the same `rev` gets 409 there.
 
 ### Requests between nodes
 
@@ -364,8 +367,8 @@ A request has no time and no nonce. Reason: a pull only reads, and it gives only
 ### The sync test
 
 `server/sync_test.py` starts 3 daemons on this machine, `server`, `desktop` and `mac`, each with its own node key and store. A proxy in the test is on each link from one node to another, so the test can cut the links of a node while the node runs.
-The test saves signed entries with pond_save in the `entries/` of each node, and keeps a model: the winner of each entry over all the saves that a node accepted.
-A measure of convergence is the time until the 3 index hashes are the same and the nodes list the winner of the model for each entry.
+The test saves signed entries with pond_save in the `entries/` of each node, and keeps a model: for each entry, the highest `rev` over all the saves that a node accepted, and each body at that `rev`.
+A measure of convergence is the time until the 3 index hashes are the same, and each node lists the body of the model that sorts last for each entry, and the other bodies of the model as its siblings in `conflicts`.
 
 ```
 server/build.sh && python3 server/sync_test.py [kills]   # 100 kills if not given
@@ -374,7 +377,8 @@ server/build.sh && python3 server/sync_test.py [kills]   # 100 kills if not give
 - **The first sync**: 20 saves on the server come to the other 2 nodes.
 - **Requests**: a sync request with no signature, or with a phone signature, gets 403. A `GET` gets 405.
 - **A bad phone signature**: the server has a key that the others do not have. The desktop and the Mac refuse the body of that key, and log it one time. A higher `rev` with a good signature then replaces it on all nodes.
-- **Partitions**: the test cuts each node in turn. Both sides save new entries, and the same entry at the same `rev` with other bodies. While the cut stays, the hash of the cut node differs. After the heal, the nodes converge within 60 s.
+- **Partitions**: the test cuts each node in turn. Both sides save new entries, and the same entry at the same `rev` with other bodies. While the cut stays, the hash of the cut node differs. After the heal, the nodes converge within 60 s, and each node lists both bodies as siblings.
+- **Siblings**: the desktop saves a body at the same `rev` as a body that it got from the server. All nodes keep both. A pick at `rev` + 1 on the Mac then replaces the siblings on all nodes.
 - **Sleep**: the Mac process stops (SIGSTOP) for 15 s, and its peers wait for their replies. After it continues, the nodes converge.
 - **Clock skew**: the server saves with file times a day ahead, and the desktop with file times a day behind. The higher `rev` wins on all nodes.
 - **Kills**: SIGKILL of a random node, at a random time while the nodes save and pull, then a start. The nodes converge to the model, and no node lists a `rev` that goes back.
@@ -382,16 +386,17 @@ server/build.sh && python3 server/sync_test.py [kills]   # 100 kills if not give
 
 ### Measured results of the sync
 
-All the tests of `server/sync_test.py` pass on the Mac (macOS, APFS), with 100 kills, on 2026-10-28. The other tests of `server/test.sh` and `store/test.sh` also pass there.
+All the tests of `server/sync_test.py` pass on the Mac (macOS, APFS), with 100 kills, on 2026-10-29. The other tests of `server/test.sh` and `store/test.sh` also pass there.
 Linux and OpenBSD were not measured for the sync. The real nodes and WireGuard were not used, because the deploy needs the node keys of the captain.
 
 | Measure | Result | Target |
 |---|---|---|
-| Convergence after the heal of a partition of the server, the desktop and the Mac | 2.0 s, 2.4 s and 2.4 s | 60 s |
-| Convergence after the Mac sleeps for 15 s | 0.1 s | 60 s |
-| Convergence after 100 kills with SIGKILL at a random time | 4.2 s: each saved winner on each node | 60 s |
-| 100 writers on 3 devices, 293 saves | convergence in 4.1 s; 0 `rev` that goes back in 189 reads | no `rev` that goes back |
-| The kills | 0 `rev` that goes back in 3,912 reads of the 3 nodes | no `rev` that goes back |
+| Convergence after the heal of a partition of the server, the desktop and the Mac | 3.0 s, 3.0 s and 2.9 s | 60 s |
+| Convergence after the Mac sleeps for 15 s | 0.3 s | 60 s |
+| Two bodies at the same `rev` on two nodes | both kept as siblings on each node; a pick at `rev` + 1 replaces them on all nodes in 5.0 s | no lost body |
+| Convergence after 100 kills with SIGKILL at a random time | 4.6 s: each saved body on each node | 60 s |
+| 100 writers on 3 devices, 266 saves | convergence in 5.2 s; 0 `rev` that goes back in 114 reads | no `rev` that goes back |
+| The kills | 0 `rev` that goes back in 1,413 reads of the 3 nodes | no `rev` that goes back |
 | A body with no good phone signature | refused by both peers, and logged one time | refused |
 
 A pull each 5 s and a scan of `entries/` each second give the time of convergence. Most of a measure is the wait for the next pull.

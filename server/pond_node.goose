@@ -114,7 +114,7 @@ fn take(c: Config&, name: u8[:]) -> bool {
     let e = store::get(id);
     if e && store::body(e) == body { return true; }
     guard signed(c, body, sig_text) else { log(str("refused ", name, ": no good signature from a key in keys/")); return true; }
-    let status, rev = store::append_signed(body, trim(sig_text));
+    let status, rev = store::merge(body, trim(sig_text));
     match status {
         Created => log(str("took ", name)),
         Same => {},
@@ -199,17 +199,19 @@ fn hex(out: u8[>..]&, bytes: u8[:]) {
 }
 
 // The index hash: the SHA-256 of the newest revision of each entry, a
-// remove too, in the order of the ids, as "<id> <rev> <length>\n<body>". Two
-// nodes with the same hash have the same bodies.
+// remove too, and of each sibling, in the order of the ids, then of the
+// bodies, as "<id> <rev> <length>\n<body>". Two nodes with the same hash
+// have the same bodies.
 fn index_hash() -> u8[>..] {
     var ids: i64[>..] = [];
     for i in store::entry_count() { ids.push(i); }
     sort(ids) { a, b => compare(store::entry(a).id[..], store::entry(b).id[..]) < 0 };
     var text: u8[>..] = [];
     for i in ids {
-        let e = store::entry(i);
-        format(text, e.id, " ", e.rev, " ", e.size, "\n");
-        text.append(store::body(e));
+        store::each_top(store::entry(i)) { t =>
+            format(text, t.id, " ", t.rev, " ", t.size, "\n");
+            text.append(store::body(t));
+        };
     }
     var h: u8[>..] = [];
     var out: u8[>..] = [];
@@ -236,10 +238,11 @@ fn node_signed(c: Config&, node: u8[:], body: u8[:], sig_text: u8[:]) -> bool {
 // the node that asks, then the lines of the kind. The Signature is from the
 // node key of that node.
 //   index <node> <hash>: the index hash, then, if the hash is not the one
-//     of the node that asks, "<id> <rev> <crc>" for each entry, in the
-//     order of the changes. crc is the CRC-32C of the body.
-//   bodies <node> <id>...: the record of the newest revision of each id
-//     that the store has with a phone signature, as in the segment.
+//     of the node that asks, "<id> <rev> <crc>" for each entry and each
+//     sibling, in the order of the changes. crc is the CRC-32C of the body.
+//   bodies <node> <id>...: the record of the newest revision of each id,
+//     and of each sibling, that the store has with a phone signature, as in
+//     the segment.
 fn sync_reply(c: Config&, r: Request&, out: u8[>..]&) {
     guard r.method == "POST" else { render::format_reply(out, "405 Method Not Allowed", "text/plain", "use POST\n"); return; }
     let lines = split(r.body, '\n');
@@ -256,15 +259,15 @@ fn sync_reply(c: Config&, r: Request&, out: u8[>..]&) {
             for i in store::entry_count() { ids.push(i); }
             sort(ids) { a, b => store::entry(a).seq < store::entry(b).seq };
             for i in ids {
-                let e = store::entry(i);
-                format(body, e.id, " ", e.rev, " ", body_crc(store::body(e)), "\n");
+                store::each_top(store::entry(i)) { t => format(body, t.id, " ", t.rev, " ", body_crc(store::body(t)), "\n"); };
             }
         }
         render::format_reply(out, "200 OK", "text/plain", body);
     } else if lines[0] == "bodies" {
         for id in lines[2..] {
             let e = store::get(id);
-            if e && e.sig_len > 0 { body.append(store::record(e)); }
+            guard e else { continue; }
+            store::each_top(e) { t => if t.sig_len > 0 { body.append(store::record(t)); } };
         }
         render::format_reply(out, "200 OK", "application/octet-stream", body);
     } else {
@@ -362,8 +365,11 @@ fn pull(c: Config&, p: Peer&, refused: dictionary<u8[..96], bool>&) -> i64 {
         var key: u8[..96] = [];
         key.append(line);
         guard !refused.contains(key) else { continue; }
+        guard wants.len == 0 || last(wants) != f[0] else { continue; }
         let e = store::get(f[0]);
-        if !e || rev > e.rev || (rev == e.rev && crc != body_crc(store::body(e))) { wants.push(f[0]); }
+        var have = false;
+        if e && rev == e.rev { store::each_top(e) { t => if crc == body_crc(store::body(t)) { have = true; } }; }
+        if !e || rev > e.rev || (rev == e.rev && !have) { wants.push(f[0]); }
     }
     var took = 0;
     var at = 0;
@@ -385,8 +391,10 @@ fn pull(c: Config&, p: Peer&, refused: dictionary<u8[..96], bool>&) -> i64 {
                 let m, ok = store::meta(body, scratch);
                 var key: u8[..96] = [];
                 format(key, m.id, " ", m.rev, " ", body_crc(body));
-                refused.insert(key, true);
-                log(str("refused ", m.id, " rev ", m.rev, " from ", p.host, ":", p.port, ": no good signature from a key in keys/"));
+                if !refused.contains(key) {
+                    refused.insert(key, true);
+                    log(str("refused ", m.id, " rev ", m.rev, " from ", p.host, ":", p.port, ": no good signature from a key in keys/"));
+                }
             }
         };
         if !whole { log(str("refused the records from ", p.host, ":", p.port, ": not whole records")); }
@@ -510,11 +518,11 @@ fn fcgi_reply(out: u8[>..]&, id: i64, cgi: u8[:]) {
     put_record(out, 3, id, [0, 0, 0, 0, 0, 0, 0, 0]);
 }
 
-// The items of the store, newest first, made again only after the store
-// changes.
+// The items of the store, newest first. update makes them, and the
+// conflicts list, again only after the store changes.
 struct View { records: i64, size: i64, items: render::Item[>..] }
 
-fn update(v: View&) {
+fn update(v: View&, conflicts: u8[>..]&) {
     guard store::refresh() else { log("a reader cannot read the store"); return; }
     guard store::record_count() != v.records || store::segment_size() != v.size else { return; }
     v.items.clear();
@@ -522,14 +530,34 @@ fn update(v: View&) {
         let item, ok = render::item_of(store::body(store::entry(i)), 0);
         if ok { v.items.push(copy(item)); }
     }
+    // Each entry with siblings, a removed one too, in the order of the ids:
+    // {"id":...,"rev":n,"siblings":[...]}, with each body at the top rev.
+    conflicts.clear();
+    var ids: i64[>..] = [];
+    for i in store::entry_count() { if store::conflicted(store::entry(i)) { ids.push(i); } }
+    sort(ids) { a, b => compare(store::entry(a).id[..], store::entry(b).id[..]) < 0 };
+    for i, k in ids {
+        let e = store::entry(i);
+        if k > 0 { conflicts.push(','); }
+        conflicts.append("{\"id\":");
+        json::format_string(conflicts, e.id);
+        format(conflicts, ",\"rev\":", e.rev, ",\"siblings\":[");
+        var first = true;
+        store::each_top(e) { t =>
+            if !first { conflicts.push(','); }
+            first = false;
+            render::format_sibling(conflicts, store::body(t));
+        };
+        conflicts.append("]}");
+    }
     v.records = store::record_count();
     v.size = store::segment_size();
 }
 
-fn serve(c: Config&, fd: i32, v: View&) {
+fn serve(c: Config&, fd: i32, v: View&, conflicts: u8[>..]&) {
     var r = Request { id: 0, method: [], uri: [], sig: [], body: [] };
     guard read_request(fd, r) else { pond_close(fd); return; }
-    update(v);
+    update(v, conflicts);
     var cgi: u8[>..] = [];
     if r.uri == "/pond/sync" {
         sync_reply(c, r, cgi);
@@ -539,7 +567,7 @@ fn serve(c: Config&, fd: i32, v: View&) {
     } else {
         var order: render::Item&[>..] = [];
         for it in v.items { order.push(it); }
-        render::reply(cgi, r.method, r.uri, c.template, order);
+        render::reply(cgi, r.method, r.uri, c.template, order, conflicts);
     }
     var out: u8[>..] = [];
     fcgi_reply(out, r.id, cgi);
@@ -550,7 +578,8 @@ fn serve(c: Config&, fd: i32, v: View&) {
 thread_fn reader(c: Config) {
     guard store::open(c.store, false) else { die("a reader cannot open the store"); }
     var v = View { records: -1, size: -1, items: [] };
-    loop { serve(c, qget<Conn>().fd, v); }
+    var conflicts: u8[>..] = [];
+    loop { serve(c, qget<Conn>().fd, v, conflicts); }
 }
 
 fn main() {

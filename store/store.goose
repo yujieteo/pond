@@ -4,6 +4,8 @@
 // entry by its id, and lists the entries newest first by date, or with one
 // tag. Each body stays byte for byte the signed request body, and a record
 // can keep the phone signature of its body, so that a peer can check it.
+// Two different bodies at the top rev of an entry are siblings: the store
+// keeps both, until a higher rev replaces them.
 // docs/store.md is the design; docs/protocol.md has the rules it keeps.
 //
 // The state is in globals, so a program (or a thread, which gets its own
@@ -44,7 +46,8 @@ let MAX_BODY = 8192;
 let MAX_SIG = 255;
 let MAX_RECORD = MAX_BODY + 1 + MAX_SIG;
 
-// The index item of one entry: its newest revision.
+// The index item of one entry: its newest revision. At the top rev, the
+// body that sorts last byte by byte; the others are its siblings.
 struct Entry {
     id: u8[..64],
     rev: i64,
@@ -79,6 +82,7 @@ var torn = 0;               // bytes at the end of the file that are not a whole
 var data: u8[>..];          // the segment, up to the end of its last whole record
 var strs: u8[>..];
 var entries: Entry[>..];
+var siblings: Entry[>..];   // the other bodies at the top rev of an entry, in no order
 var by_id = dictionary<u8[..64], i64> {};
 var order: i64[>..];        // the listed entries, newest first, when sorted is true
 var by_tag: i64[>..];       // the listed entries with a tag, by the tag, then newest first
@@ -246,9 +250,10 @@ fn walk<F>(from: i64) -> i64 {
     return end;
 }
 
-// Puts the record at offset at in the index. A rev that is not higher than
-// the index has is an old revision, and changes nothing. A record of a merge
-// can have the same rev and a body that sorts after the old one: it wins.
+// Puts the record at offset at in the index. A rev that is lower than the
+// index has is an old revision, and changes nothing. A higher rev replaces
+// the entry and its siblings. A different body at the same rev is a sibling:
+// the body that sorts last is the entry, so that each node shows the same.
 fn index(at: i64, n: i64) {
     let payload = data[at + HEADER..at + n];
     let sig_len = sig_length(payload);
@@ -264,28 +269,46 @@ fn index(at: i64, n: i64) {
     records++;
     let have = ::get(by_id, m.id);
     let body_at = at + n - body.len;
+    let item = Entry {
+        id: m.id, rev: m.rev, rec: at, sig_len: sig_len, at: body_at, size: body.len, seq: seq, removed: m.removed,
+        date_at: start, date_len: m.date_len, tag_at: start + m.date_len, tag_len: m.tag_len,
+    };
     if have {
         let e .= entries[have];
-        guard wins(m.rev, body, e.rev, data[e.at..e.at + e.size]) else { strs.resize(start); return; }
-        e.rev = m.rev;
-        e.rec = at;
-        e.sig_len = sig_len;
-        e.at = body_at;
-        e.size = body.len;
-        e.seq = seq;
-        e.removed = m.removed;
-        e.date_at = start;
-        e.date_len = m.date_len;
-        e.tag_at = start + m.date_len;
-        e.tag_len = m.tag_len;
+        guard m.rev >= e.rev && !has_body(e, body) else { strs.resize(start); return; }
+        if m.rev > e.rev {
+            retain(siblings) { it.id != m.id };
+        } else if compare(body, data[e.at..e.at + e.size]) < 0 {
+            siblings.push(item);
+            return;
+        } else {
+            siblings.push(e);
+        }
+        entries[have] = item;
     } else {
         by_id.insert(m.id, entries.len);
-        entries.push(Entry {
-            id: m.id, rev: m.rev, rec: at, sig_len: sig_len, at: body_at, size: body.len, seq: seq, removed: m.removed,
-            date_at: start, date_len: m.date_len, tag_at: start + m.date_len, tag_len: m.tag_len,
-        });
+        entries.push(item);
     }
     sorted = false;
+}
+
+// True if body is the body of e or of a sibling of e.
+fn has_body(e: Entry&, b: u8[:]) -> bool {
+    return data[e.at..e.at + e.size] == b || any(siblings) { it.id == e.id && data[it.at..it.at + it.size] == b };
+}
+
+// True if e has siblings: a conflict that the phone resolves with a save at
+// a higher rev.
+fn conflicted(e: Entry&) -> bool { any(siblings) { it.id == e.id } }
+
+// F(t) for each revision at the top rev of e, in the order of the bodies:
+// the siblings, then e. Each node gives the same sequence.
+fn each_top<F>(e: Entry&) {
+    var ks: i64[>..] = [];
+    for s, k in siblings { if s.id == e.id { ks.push(k); } }
+    sort(ks) { a, b => compare(body(siblings[a]), body(siblings[b])) < 0 };
+    for k in ks { F(siblings[k]); }
+    F(e);
 }
 
 // Reads the records that the file has past data, and indexes them. In a
@@ -330,6 +353,7 @@ fn reset() {
     data.clear();
     strs.clear();
     entries.clear();
+    siblings.clear();
     by_id.clear();
     order.clear();
     by_tag.clear();
@@ -393,12 +417,6 @@ fn status_text(s: Status) -> const u8[:] {
     }
 }
 
-// The rule of a merge: the higher rev wins, and at the same rev the body
-// that sorts later. Each node picks the same body, so the nodes converge.
-fn wins(rev: i64, body: u8[:], old_rev: i64, old: u8[:]) -> bool {
-    return rev > old_rev || (rev == old_rev && compare(body, old) > 0);
-}
-
 // Saves body, the exact bytes of a signed request, as the newest revision of
 // its entry, with the rule of docs/protocol.md: the higher rev wins; the same
 // body again is a retry and changes nothing; any other body with a rev that
@@ -407,11 +425,11 @@ fn wins(rev: i64, body: u8[:], old_rev: i64, old: u8[:]) -> bool {
 // A store with damage at the end refuses all appends with Failed.
 fn append(body: u8[:]) -> Status, i64 { return save(body, "", false); }
 
-// append, with sig, the base64 phone signature of body, in the record.
-fn append_signed(body: u8[:], sig: u8[:]) -> Status, i64 { return save(body, sig, false); }
-
-// append_signed for a body from a peer: at the same rev, the body that
-// sorts later wins (see wins).
+// Saves body with sig, the base64 phone signature of body, in the record,
+// with the rule of a merge: a body that a node acknowledged. The higher rev
+// wins; a body that the store has at the top rev changes nothing; a
+// different body at the same rev is Created as a sibling; a lower rev is
+// refused.
 fn merge(body: u8[:], sig: u8[:]) -> Status, i64 { return save(body, sig, true); }
 
 fn save(body: u8[:], sig: u8[:], merging: bool) -> Status, i64 {
@@ -443,9 +461,8 @@ fn locked_append(payload: u8[:], body_at: i64, id: u8[..64], rev: i64, merging: 
     if have {
         let e = entries[have];
         old_rev = e.rev;
-        let old = data[e.at..e.at + e.size];
-        if old == body { return Status.Same, old_rev; }
-        guard rev > old_rev || (merging && wins(rev, body, old_rev, old)) else { return Status.Conflict, old_rev; }
+        if rev == old_rev && has_body(e, body) { return Status.Same, old_rev; }
+        guard rev > old_rev || (merging && rev == old_rev) else { return Status.Conflict, old_rev; }
     }
     var rec: u8[>..] = [];
     rec.append(MAGIC[..]);
@@ -475,7 +492,7 @@ fn get(id: u8[:]) -> Entry? {
 
 fn body(e: Entry&) -> const u8[:] { data[e.at..e.at + e.size] }
 fn signature(e: Entry&) -> const u8[:] { data[e.rec + HEADER..e.rec + HEADER + e.sig_len] }
-// The whole record of the newest revision: its header, signature and body.
+// The whole record of a revision: its header, signature and body.
 fn record(e: Entry&) -> const u8[:] { data[e.rec..e.at + e.size] }
 fn date(e: Entry&) -> const u8[:] { strs[e.date_at..e.date_at + e.date_len] }
 fn tag(e: Entry&) -> const u8[:] { strs[e.tag_at..e.tag_at + e.tag_len] }
@@ -533,8 +550,8 @@ fn each_record<F>() {
     };
 }
 
-// Writes the newest revision of each entry to a new segment, which takes
-// the place of the old one in one rename. A crash at any point leaves the
+// Writes the newest revision of each entry, with its siblings, to a new
+// segment, which takes the place of the old one in one rename. A crash at any point leaves the
 // old segment or the new one, and each has all the newest revisions. A
 // store with damage is not compacted: the damage can be the newest
 // revision of an entry, and the old bytes can still help to repair it.
@@ -547,14 +564,12 @@ fn compact() -> bool {
 
 fn locked_compact() -> bool {
     guard catch_up() && damage.len == 0 else { return false; }
-    var keep: i64[>..] = [];
-    for e, i in entries { keep.push(i); }
-    sort(keep) { a, b => entries[a].seq < entries[b].seq };
+    var keep: Entry[>..] = [];
+    keep.append(entries);
+    keep.append(siblings);
+    sort(keep) { a, b => a.seq < b.seq };
     var next: u8[>..] = [];
-    for i in keep {
-        let e = entries[i];
-        next.append(record(e));
-    }
+    for e in keep { next.append(record(e)); }
     var new_path: u8[..1024] = [];
     guard set_path(new_path, dir_path, "store.seg.new") else { return false; }
     let fd = create_file(new_path);

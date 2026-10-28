@@ -2,7 +2,8 @@
 proxy on each link between two nodes, so that the test can cut the links of
 a node (a partition) while the node runs. It saves signed entries with
 pond_save on each node, and checks that the nodes converge to the same
-index hash within 60 s, with the highest rev of each entry, after
+index hash within 60 s, with each acknowledged body at the highest rev of
+each entry (two bodies at the same rev are siblings on each node), after
 partitions, a node that sleeps (SIGSTOP), clock skew, kills with SIGKILL
 and 100 writers at the same time. It needs openssl, and the built
 server/pond_node and server/pond_save.
@@ -121,6 +122,13 @@ class Node:
         got = self.get("/pond/entries.json")
         return None if got is None else {e["id"]: (e["rev"], e["entry"]["title"]) for e in got["entries"]}
 
+    def conflicts(self):
+        """id: (rev, the sorted titles of the siblings, None for a remove) of
+        each entry with siblings, or None."""
+        got = self.get("/pond/entries.json")
+        return None if got is None else {
+            c["id"]: (c["rev"], sorted(b["entry"]["title"] for b in c["siblings"])) for c in got.get("conflicts", [])}
+
     def log(self):
         with open(f"{self.dir}/node.log", "rb") as f:
             return f.read().decode(errors="replace")
@@ -171,9 +179,9 @@ class Proxy:
         pipe(c, d)
 
 
-# The saves, and the model: the winner of each entry over all the saves that
-# a node accepted, by the rule of a merge (the higher rev, then at the same
-# rev the body that sorts later).
+# The saves, and the model: for each entry, the highest rev over all the
+# saves that a node accepted, and each body at that rev. The node lists the
+# body that sorts last, and the others are its siblings.
 model = {}
 model_lock = threading.Lock()
 
@@ -191,14 +199,16 @@ def save(node, id, rev, title, key="d1", times=None):
             for ext in ("json", "sig"):
                 os.utime(f"{node.pond}/entries/{id}.{ext}", (times, times))
         with model_lock:
-            if key != "rogue" and (id not in model or (rev, body) > model[id][:2]):
-                model[id] = (rev, body, title)
+            if key != "rogue" and (id not in model or rev > model[id][0]):
+                model[id] = (rev, {body: title})
+            elif key != "rogue" and rev == model[id][0]:
+                model[id][1][body] = title
     return code, int(out.rsplit(" ", 1)[1]) if code == 409 else 0
 
 
 def converge(nodes, limit=60):
-    """Seconds until all the nodes have the same index hash and list the
-    winner of the model for each entry, or None. A node takes a save into
+    """Seconds until all the nodes have the same index hash and match the
+    model, or None. A node takes a save into
     its store at its next scan of the entry files, up to 1 s later."""
     t0 = time.monotonic()
     while time.monotonic() - t0 < limit:
@@ -210,11 +220,19 @@ def converge(nodes, limit=60):
 
 
 def matches_model(nodes, quiet=False):
-    """True if each node lists the winner of the model for each entry."""
-    want = {id: (m[0], m[2]) for id, m in model.items()}
+    """True if each node lists the body that sorts last at the top rev of
+    each entry of the model, and lists the others as its siblings."""
+    with model_lock:
+        want = {id: (rev, bodies[max(bodies)]) for id, (rev, bodies) in model.items()}
+        conflicts = {id: (rev, sorted(bodies.values())) for id, (rev, bodies) in model.items() if len(bodies) > 1}
     ok = True
     for n in nodes:
         got = n.revs()
+        got_conflicts = n.conflicts()
+        if got_conflicts != conflicts:
+            ok = False
+            if not quiet:
+                print(f"  {n.name} has the conflicts {got_conflicts}, not {conflicts}")
         if got != want:
             ok = False
             if quiet:
@@ -300,7 +318,8 @@ def main():
     expect(f"a higher rev with a good signature replaces it on all nodes ({t and round(t, 1)} s)", t is not None and matches_model(all3))
 
     # A partition of each node: both sides save, also the same entry at the
-    # same rev with other bodies. After the heal, the nodes converge.
+    # same rev with other bodies. After the heal, the nodes converge, and
+    # each node keeps both bodies of the entry as siblings.
     for k, name in enumerate(names):
         cut, other = nodes[name], nodes[names[(k + 1) % 3]]
         proxy.cut = {name}
@@ -318,6 +337,26 @@ def main():
         results.append(t)
         expect(f"after the partition of {name} heals, the 3 index hashes are the same in {t and round(t, 1)} s (limit 60 s)",
                t is not None and matches_model(all3))
+        expect(f"after the partition of {name}, each node lists both acknowledged bodies of shared rev {rev}",
+               all(n.conflicts().get("shared") == (rev, sorted([f"{name} side of partition {k}", f"{other.name} side of partition {k}"]))
+                   for n in all3))
+
+    # A save on the desktop at the same rev as a body that came to it from the
+    # server: the desktop keeps both. Then a pick at rev + 1 on the Mac
+    # replaces both on all nodes.
+    save(server, "late", 1, "server first")
+    t = converge(all3)
+    code, _ = save(desktop, "late", 1, "desktop after")
+    t2 = converge(all3)
+    expect(f"a save at the same rev after a body from a peer is a sibling on all nodes ({t2 and round(t2, 1)} s)",
+           t is not None and t2 is not None and code == 201 and matches_model(all3)
+           and all(n.conflicts().get("late") == (1, ["desktop after", "server first"]) for n in all3))
+    save(mac, "late", 2, "picked")
+    save(mac, "shared", model["shared"][0] + 1, "picked")
+    t = converge(all3)
+    expect(f"a pick at rev + 1 replaces all the siblings on all nodes ({t and round(t, 1)} s)",
+           t is not None and matches_model(all3) and all(n.conflicts() == {} for n in all3)
+           and all(n.revs()["late"] == (2, "picked") for n in all3))
 
     # The Mac sleeps: its process stops, and its peers wait for replies.
     os.kill(mac.proc.pid, signal.SIGSTOP)
@@ -357,7 +396,7 @@ def main():
     t = converge(all3)
     results.append(t)
     back = watch.end()
-    expect(f"{count} kills with SIGKILL at a random time: the nodes converge in {t and round(t, 1)} s, with each saved winner",
+    expect(f"{count} kills with SIGKILL at a random time: the nodes converge in {t and round(t, 1)} s, with each saved body",
            t is not None and matches_model(all3))
     expect(f"after the kills, no node listed a rev that goes back ({watch.reads} reads)", not back)
     for line in back[:5]:
@@ -392,7 +431,7 @@ def main():
     t = converge(all3)
     results.append(t)
     back = watch.end()
-    expect(f"100 writers on 3 devices ({len(created)} saves): the nodes converge in {t and round(t, 1)} s, with the winner of each entry",
+    expect(f"100 writers on 3 devices ({len(created)} saves): the nodes converge in {t and round(t, 1)} s, with each saved body",
            t is not None and matches_model(all3))
     expect(f"100 writers: no node listed a rev that goes back ({watch.reads} reads)", not back)
     for line in back[:5]:
