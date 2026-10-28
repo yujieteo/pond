@@ -70,9 +70,9 @@ pond_read sends only the public fields of the list above, so a file with any oth
 |---|---|
 | `/pond/entries.json` | `{"entries":[{"entry":{...},"id":"e1","rev":2}, ...]}`, for the app. |
 | `/log/` (and `/log`) | The site template `/web/site/log/template.html` in the chroot, with the line `<!-- pond:entries -->` replaced by one `<article>` for each entry: the date, the title (a link if the entry has a web link), the `made` text and the interest. With no template, or no marker line, a plain page. |
-| `/log/feed.xml` | RSS 2.0: one item for each entry, with the title, the link, the `made` text, the id as `guid` and the date as `pubDate`. |
+| `/log/feed.xml` | RSS 2.0: one item for each entry, with the title, the link, the `made` text, the id as `guid` and the date as `pubDate`. An item whose date is not `YYYY-MM-DD` in digits has no `pubDate`. |
 
-All the text of an entry is escaped for HTML and XML. A `link` that does not start with `https://` or `http://` is not made a link. Reason: an entry must not put a script on the page.
+All the text of an entry is escaped for HTML and XML, and its control characters (other than tab, LF and CR) are removed. Reason: XML does not allow them. A `link` that does not start with `https://` or `http://` is not made a link. Reason: an entry must not put a script on the page.
 Any other path gets 404, and any other method gets 405.
 The `POND_TEMPLATE` variable changes the template path for the tests.
 On OpenBSD, pond_read unveils `entries/` and the template read only, and pledges `stdio rpath`. It cannot write.
