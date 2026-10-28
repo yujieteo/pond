@@ -101,6 +101,27 @@ private let now = Date(timeIntervalSince1970: 1_793_000_000)
     #expect(journal[id] == nil)
 }
 
+@Test func aRemovalAfterALostReplyIsSent() {
+    var journal = Journal()
+    let id = journal.record(paper)
+    let put = journal.outbox(now: now, key: "phone")[0]
+    journal.apply(.later, to: put)
+
+    journal.remove(id, at: now)
+    let removal = journal.outbox(now: now, key: "phone")
+
+    #expect(removal == [.remove(id: id, rev: 2, key: "phone")], "the server can have the put without a reply")
+}
+
+@Test func aJournalWithoutTriedDecodes() throws {
+    var journal = Journal()
+    journal.record(paper)
+    var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(journal)) as! [String: [[String: Any]]]
+    json["records"]![0].removeValue(forKey: "tried")
+    let old = try JSONDecoder().decode(Journal.self, from: JSONSerialization.data(withJSONObject: json))
+    #expect(old == journal)
+}
+
 @Test func theFunMarkIsNotInTheBody() throws {
     var journal = Journal()
     let id = journal.record(paper)
