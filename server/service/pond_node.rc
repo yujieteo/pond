@@ -1,0 +1,16 @@
+#!/bin/ksh
+#
+# pond_node on OpenBSD: install as /etc/rc.d/pond_node (docs/store.md).
+# Add the WireGuard address with: rcctl set pond_node flags ... --wireguard <address>
+
+daemon="/usr/local/bin/pond_node"
+daemon_flags="--pond /var/www/pond --store /var/pond-node --template /var/www/web/site/log/template.html --port 8788"
+daemon_user="_pondnode"
+daemon_logger="daemon.info"
+
+. /etc/rc.d/rc.subr
+
+rc_bg=YES
+rc_reload=NO
+
+rc_cmd $1

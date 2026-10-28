@@ -1,5 +1,6 @@
 /* The C side of pond_read.goose: the OpenBSD sandbox, and the time of the
-   last change of a file. A Goose bool is a uint8_t in C. */
+   last change of a file, which pond_node.goose uses too. A Goose bool is a
+   uint8_t in C. */
 #include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -28,10 +29,16 @@ uint8_t pond_sandbox(sl_u8 entries, sl_u8 template) {
 #endif
 }
 
-/* Seconds since the epoch of the last change of the file, or 0. */
-int64_t pond_mtime(sl_u8 path) {
+/* Nanoseconds since the epoch of the last change of the file, or 0. A
+   second is too coarse: the outbox of the phone can send many changes in
+   one second, and pond_node puts them in the order of their changes. */
+int64_t pond_mtime_ns(sl_u8 path) {
     char p[PATH_MAX];
     struct stat st;
     if (!pond_cpath(p, path) || stat(p, &st) != 0) return 0;
-    return (int64_t)st.st_mtime;
+#ifdef __APPLE__
+    return (int64_t)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
+#else
+    return (int64_t)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+#endif
 }

@@ -1,0 +1,43 @@
+# pond_node on Linux: install as /etc/systemd/system/pond-node.service
+# (docs/store.md). Add the WireGuard address with --wireguard <address>,
+# and add the WireGuard unit to After=.
+
+[Unit]
+Description=pond_node, the daemon of the Pond store
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/pond_node --pond /var/lib/pond --store /var/lib/pond-node --template /var/lib/pond/template.html --port 8788
+Restart=on-failure
+DynamicUser=yes
+StateDirectory=pond-node
+ReadOnlyPaths=/var/lib/pond
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

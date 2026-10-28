@@ -3390,27 +3390,29 @@ static const uint8_t gs_str52[12] = "saved before";
 static const uint8_t gs_str53[26] = "the saved entry is damaged";
 static const uint8_t gs_str54[12] = "409 Conflict";
 static const uint8_t gs_str55[19] = "the server has rev ";
-static const uint8_t gs_str56[22] = "cannot write the entry";
-static const uint8_t gs_str57[11] = "201 Created";
-static const uint8_t gs_str58[5] = "saved";
-static const uint8_t gs_str59[14] = "expected a key";
-static const uint8_t gs_str60[10] = "bad string";
-static const uint8_t gs_str61[12] = "expected ':'";
-static const uint8_t gs_str62[1] = "";
-static const uint8_t gs_str63[23] = "unexpected end of input";
-static const uint8_t gs_str64[4] = "true";
-static const uint8_t gs_str65[5] = "false";
-static const uint8_t gs_str66[4] = "null";
-static const uint8_t gs_str67[10] = "bad number";
-static const uint8_t gs_str68[16] = "expected a value";
-static const uint8_t gs_str69[19] = "expected ',' or '}'";
-static const uint8_t gs_str70[19] = "expected ',' or ']'";
-static const uint8_t gs_str71[15] = "unclosed object";
-static const uint8_t gs_str72[14] = "unclosed array";
-static const uint8_t gs_str73[14] = "trailing input";
-static const uint8_t gs_str74[6] = "json: ";
-static const uint8_t gs_str75[9] = " at byte ";
-static const uint8_t gs_str76[200] = "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899";
+static const uint8_t gs_str56[4] = ".sig";
+static const uint8_t gs_str57[26] = "cannot write the signature";
+static const uint8_t gs_str58[22] = "cannot write the entry";
+static const uint8_t gs_str59[11] = "201 Created";
+static const uint8_t gs_str60[5] = "saved";
+static const uint8_t gs_str61[14] = "expected a key";
+static const uint8_t gs_str62[10] = "bad string";
+static const uint8_t gs_str63[12] = "expected ':'";
+static const uint8_t gs_str64[1] = "";
+static const uint8_t gs_str65[23] = "unexpected end of input";
+static const uint8_t gs_str66[4] = "true";
+static const uint8_t gs_str67[5] = "false";
+static const uint8_t gs_str68[4] = "null";
+static const uint8_t gs_str69[10] = "bad number";
+static const uint8_t gs_str70[16] = "expected a value";
+static const uint8_t gs_str71[19] = "expected ',' or '}'";
+static const uint8_t gs_str72[19] = "expected ',' or ']'";
+static const uint8_t gs_str73[15] = "unclosed object";
+static const uint8_t gs_str74[14] = "unclosed array";
+static const uint8_t gs_str75[14] = "trailing input";
+static const uint8_t gs_str76[6] = "json: ";
+static const uint8_t gs_str77[9] = " at byte ";
+static const uint8_t gs_str78[200] = "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899";
 #pragma pack(pop)
 
 /* ---- data ---- */
@@ -4441,16 +4443,25 @@ static void main_g(int64_t gs_sp) {
     sl_u8 t299;
     sl_u8 t301;
     sl_u8 t302;
-    sl_u8 t303;
-    sl_u8 t304;
-    sl_u8 t305;
-    sl_u8 t306;
-    sl_u8 t308;
-    sl_u8 t309;
+    gs_rhdr t303;
     sl_u8 t310;
-    sl_u8 t311;
     sl_u8 t312;
     sl_u8 t313;
+    sl_u8 t314;
+    sl_u8 t315;
+    sl_u8 t317;
+    sl_u8 t318;
+    sl_u8 t319;
+    sl_u8 t320;
+    sl_u8 t321;
+    sl_u8 t322;
+    sl_u8 t323;
+    sl_u8 t325;
+    sl_u8 t326;
+    sl_u8 t327;
+    sl_u8 t328;
+    sl_u8 t329;
+    sl_u8 t330;
     method_g.base = GS(gs_sp + 0)->top; method_g.len = 0;
     method_g.len = 0;
     t0.data = ((uint8_t *)gs_str0); t0.len = 14;
@@ -4543,36 +4554,36 @@ static void main_g(int64_t gs_sp) {
         t41.data = (uint8_t *)((err_g.base)); t41.len = (err_g.len);
         text_g = t41;
         {
-            uint8_t *t314 = GS(gs_sp + 6)->top;
-            out_g.base = t314; out_g.len = 0;
+            uint8_t *t331 = GS(gs_sp + 6)->top;
+            out_g.base = t331; out_g.len = 0;
             out_g.len = 0;
             int64_t t43 = 8;
-            gs_memcpy(t314, (const uint8_t *)(((uint8_t *)gs_str11)), (size_t)t43);
-            t314 += t43;
+            gs_memcpy(t331, (const uint8_t *)(((uint8_t *)gs_str11)), (size_t)t43);
+            t331 += t43;
             out_g.len += t43;
             t45 = status_g;
             int64_t t44 = t45.len;
-            gs_memcpy(t314, (const uint8_t *)(t45.data), (size_t)t44);
-            t314 += t44;
+            gs_memcpy(t331, (const uint8_t *)(t45.data), (size_t)t44);
+            t331 += t44;
             out_g.len += t44;
             int64_t t46 = 30;
-            gs_memcpy(t314, (const uint8_t *)(((uint8_t *)gs_str12)), (size_t)t46);
-            t314 += t46;
+            gs_memcpy(t331, (const uint8_t *)(((uint8_t *)gs_str12)), (size_t)t46);
+            t331 += t46;
             out_g.len += t46;
             t48 = text_g;
             int64_t t47 = t48.len;
-            gs_memcpy(t314, (const uint8_t *)(t48.data), (size_t)t47);
-            t314 += t47;
+            gs_memcpy(t331, (const uint8_t *)(t48.data), (size_t)t47);
+            t331 += t47;
             out_g.len += t47;
             int64_t t49 = 1;
-            gs_memcpy(t314, (const uint8_t *)(((uint8_t *)gs_str13)), (size_t)t49);
-            t314 += t49;
+            gs_memcpy(t331, (const uint8_t *)(((uint8_t *)gs_str13)), (size_t)t49);
+            t331 += t49;
             out_g.len += t49;
             t50.data = (uint8_t *)((out_g.base)); t50.len = (out_g.len);
             t51 = t50;
             gs_os_write_stdout(t51);
             gs_os_flush_stdout();
-            GS(gs_sp + 6)->top = t314;
+            GS(gs_sp + 6)->top = t331;
             GS(gs_sp + 6)->top = out_g.base;
         }
         GS(gs_sp + 5)->top = err_g.base;
@@ -4906,23 +4917,23 @@ static void main_g(int64_t gs_sp) {
         return;
     }
     L171:;
-    uint8_t *t315 = GS(gs_sp + 11)->top;
+    uint8_t *t332 = GS(gs_sp + 11)->top;
     dir_g.base = GS(gs_sp + 6)->top; dir_g.len = 0;
     dir_g.len = 0;
     t175.data = ((uint8_t *)gs_str39); t175.len = 8;
     t176 = t175;
     t177.hdr = (gs_rhdr *)&dir_g; t177.stk = GS(gs_sp + 6);
     t178 = t177;
-    GS(gs_sp + 11)->top = t315;
+    GS(gs_sp + 11)->top = t332;
     uint8_t t179 = gs_os_getenv(t176, t178);
-    t315 = GS(gs_sp + 11)->top;
+    t332 = GS(gs_sp + 11)->top;
     if ((uint8_t)(!t179)) {
-        uint8_t *t316 = GS(gs_sp + 6)->top;
+        uint8_t *t333 = GS(gs_sp + 6)->top;
         int64_t t180 = 5;
-        gs_memcpy(t316, ((uint8_t *)gs_str40), (size_t)((t180) * 1));
-        t316 += (t180) * 1;
+        gs_memcpy(t333, ((uint8_t *)gs_str40), (size_t)((t180) * 1));
+        t333 += (t180) * 1;
         dir_g.len += t180;
-        GS(gs_sp + 6)->top = t316;
+        GS(gs_sp + 6)->top = t333;
     }
     sig_text_g.base = GS(gs_sp + 7)->top; sig_text_g.len = 0;
     sig_text_g.len = 0;
@@ -4930,9 +4941,9 @@ static void main_g(int64_t gs_sp) {
     t182 = t181;
     t183.hdr = (gs_rhdr *)&sig_text_g; t183.stk = GS(gs_sp + 7);
     t184 = t183;
-    GS(gs_sp + 11)->top = t315;
+    GS(gs_sp + 11)->top = t332;
     uint8_t t185 = gs_os_getenv(t182, t184);
-    t315 = GS(gs_sp + 11)->top;
+    t332 = GS(gs_sp + 11)->top;
     sig_g.base = GS(gs_sp + 8)->top; sig_g.len = 0;
     sig_g.len = 0;
     pub_text_g.base = GS(gs_sp + 9)->top; pub_text_g.len = 0;
@@ -4944,37 +4955,37 @@ static void main_g(int64_t gs_sp) {
     uint8_t t188 = base64_decode_g6(t186.hdr, t186.stk, t187.data, t187.len);
     uint8_t t189 = (uint8_t)(t188 != 0);
     if (t189) {
-        t190.base = t315; t190.len = 0;
-        uint8_t *t191 = t315;
+        t190.base = t332; t190.len = 0;
+        uint8_t *t191 = t332;
         int64_t t192 = 0;
         int64_t t194 = (dir_g.len);
         int64_t t193 = t194;
-        gs_memcpy(t315, (const uint8_t *)((dir_g.base)), (size_t)t193);
-        t315 += t193;
+        gs_memcpy(t332, (const uint8_t *)((dir_g.base)), (size_t)t193);
+        t332 += t193;
         t192 += t193;
         int64_t t195 = 6;
-        gs_memcpy(t315, (const uint8_t *)(((uint8_t *)gs_str42)), (size_t)t195);
-        t315 += t195;
+        gs_memcpy(t332, (const uint8_t *)(((uint8_t *)gs_str42)), (size_t)t195);
+        t332 += t195;
         t192 += t195;
         t197 = key_g;
         int64_t t196 = t197.len;
-        gs_memcpy(t315, (const uint8_t *)(t197.data), (size_t)t196);
-        t315 += t196;
+        gs_memcpy(t332, (const uint8_t *)(t197.data), (size_t)t196);
+        t332 += t196;
         t192 += t196;
         int64_t t198 = 4;
-        gs_memcpy(t315, (const uint8_t *)(((uint8_t *)gs_str43)), (size_t)t198);
-        t315 += t198;
+        gs_memcpy(t332, (const uint8_t *)(((uint8_t *)gs_str43)), (size_t)t198);
+        t332 += t198;
         t192 += t198;
         t190.len = t192;
         t199.data = (uint8_t *)((t190.base)); t199.len = (t190.len);
         t200 = t199;
         t201.hdr = (gs_rhdr *)&pub_text_g; t201.stk = GS(gs_sp + 9);
         t202 = t201;
-        GS(gs_sp + 11)->top = t315;
+        GS(gs_sp + 11)->top = t332;
         uint8_t t203 = gs_os_read_file(t200, t202);
-        t315 = GS(gs_sp + 11)->top;
+        t332 = GS(gs_sp + 11)->top;
         t189 = (uint8_t)(t203 != 0);
-        t315 = t190.base;
+        t332 = t190.base;
     }
     uint8_t t204 = (uint8_t)(t189 != 0);
     if (t204) {
@@ -5066,20 +5077,20 @@ static void main_g(int64_t gs_sp) {
         GS(gs_sp + 2)->top = body_g.base;
         GS(gs_sp + 1)->top = length_text_g.base;
         GS(gs_sp + 0)->top = method_g.base;
-        GS(gs_sp + 11)->top = t315;
+        GS(gs_sp + 11)->top = t332;
         return;
     }
-    t244.base = t315; t244.len = 0;
-    uint8_t *t245 = t315;
+    t244.base = t332; t244.len = 0;
+    uint8_t *t245 = t332;
     int64_t t246 = 0;
     int64_t t248 = (dir_g.len);
     int64_t t247 = t248;
-    gs_memcpy(t315, (const uint8_t *)((dir_g.base)), (size_t)t247);
-    t315 += t247;
+    gs_memcpy(t332, (const uint8_t *)((dir_g.base)), (size_t)t247);
+    t332 += t247;
     t246 += t247;
     int64_t t249 = 14;
-    gs_memcpy(t315, (const uint8_t *)(((uint8_t *)gs_str46)), (size_t)t249);
-    t315 += t249;
+    gs_memcpy(t332, (const uint8_t *)(((uint8_t *)gs_str46)), (size_t)t249);
+    t332 += t249;
     t246 += t249;
     t244.len = t246;
     t250.data = (uint8_t *)((t244.base)); t250.len = (t244.len);
@@ -5090,7 +5101,7 @@ static void main_g(int64_t gs_sp) {
         t254 = t253;
         t255.data = ((uint8_t *)gs_str48); t255.len = 23;
         reply_g(t254.data, t254.len, t255.data, t255.len, gs_sp + 12);
-        t315 = t244.base;
+        t332 = t244.base;
         GS(gs_sp + 10)->top = pub_g.base;
         GS(gs_sp + 9)->top = pub_text_g.base;
         GS(gs_sp + 8)->top = sig_g.base;
@@ -5102,30 +5113,31 @@ static void main_g(int64_t gs_sp) {
         GS(gs_sp + 2)->top = body_g.base;
         GS(gs_sp + 1)->top = length_text_g.base;
         GS(gs_sp + 0)->top = method_g.base;
-        GS(gs_sp + 11)->top = t315;
+        GS(gs_sp + 11)->top = t332;
         return;
     }
-    uint8_t *t317 = GS(gs_sp + 12)->top;
-    path_g.base = t317; path_g.len = 0;
-    uint8_t *t256 = t317;
+    uint8_t *t334 = GS(gs_sp + 12)->top;
+    uint8_t *t335 = GS(gs_sp + 14)->top;
+    path_g.base = t334; path_g.len = 0;
+    uint8_t *t256 = t334;
     int64_t t257 = 0;
     int64_t t259 = (dir_g.len);
     int64_t t258 = t259;
-    gs_memcpy(t317, (const uint8_t *)((dir_g.base)), (size_t)t258);
-    t317 += t258;
+    gs_memcpy(t334, (const uint8_t *)((dir_g.base)), (size_t)t258);
+    t334 += t258;
     t257 += t258;
     int64_t t260 = 9;
-    gs_memcpy(t317, (const uint8_t *)(((uint8_t *)gs_str49)), (size_t)t260);
-    t317 += t260;
+    gs_memcpy(t334, (const uint8_t *)(((uint8_t *)gs_str49)), (size_t)t260);
+    t334 += t260;
     t257 += t260;
     t262 = id_g;
     int64_t t261 = t262.len;
-    gs_memcpy(t317, (const uint8_t *)(t262.data), (size_t)t261);
-    t317 += t261;
+    gs_memcpy(t334, (const uint8_t *)(t262.data), (size_t)t261);
+    t334 += t261;
     t257 += t261;
     int64_t t263 = 5;
-    gs_memcpy(t317, (const uint8_t *)(((uint8_t *)gs_str50)), (size_t)t263);
-    t317 += t263;
+    gs_memcpy(t334, (const uint8_t *)(((uint8_t *)gs_str50)), (size_t)t263);
+    t334 += t263;
     t257 += t263;
     path_g.len = t257;
     old_g.base = GS(gs_sp + 13)->top; old_g.len = 0;
@@ -5134,11 +5146,13 @@ static void main_g(int64_t gs_sp) {
     t265 = t264;
     t266.hdr = (gs_rhdr *)&old_g; t266.stk = GS(gs_sp + 13);
     t267 = t266;
-    GS(gs_sp + 11)->top = t315;
-    GS(gs_sp + 12)->top = t317;
+    GS(gs_sp + 11)->top = t332;
+    GS(gs_sp + 12)->top = t334;
+    GS(gs_sp + 14)->top = t335;
     uint8_t t268 = gs_os_read_file(t265, t267);
-    t315 = GS(gs_sp + 11)->top;
-    t317 = GS(gs_sp + 12)->top;
+    t332 = GS(gs_sp + 11)->top;
+    t334 = GS(gs_sp + 12)->top;
+    t335 = GS(gs_sp + 14)->top;
     if (t268) {
         uint8_t *t269 = (old_g.base);
         int64_t t270 = (old_g.len);
@@ -5152,8 +5166,8 @@ static void main_g(int64_t gs_sp) {
             t274.data = ((uint8_t *)gs_str52); t274.len = 12;
             reply_g(t273.data, t273.len, t274.data, t274.len, gs_sp + 14);
             GS(gs_sp + 13)->top = old_g.base;
-            t317 = path_g.base;
-            t315 = t244.base;
+            t334 = path_g.base;
+            t332 = t244.base;
             GS(gs_sp + 10)->top = pub_g.base;
             GS(gs_sp + 9)->top = pub_text_g.base;
             GS(gs_sp + 8)->top = sig_g.base;
@@ -5165,11 +5179,12 @@ static void main_g(int64_t gs_sp) {
             GS(gs_sp + 2)->top = body_g.base;
             GS(gs_sp + 1)->top = length_text_g.base;
             GS(gs_sp + 0)->top = method_g.base;
-            GS(gs_sp + 11)->top = t315;
-            GS(gs_sp + 12)->top = t317;
+            GS(gs_sp + 11)->top = t332;
+            GS(gs_sp + 12)->top = t334;
+            GS(gs_sp + 14)->top = t335;
             return;
         }
-        old_doc_g.base = GS(gs_sp + 14)->top; old_doc_g.len = 0;
+        old_doc_g.base = t335; old_doc_g.len = 0;
         old_doc_g.len = 0;
         old_decoded_g.base = GS(gs_sp + 15)->top; old_decoded_g.len = 0;
         old_decoded_g.len = 0;
@@ -5178,7 +5193,9 @@ static void main_g(int64_t gs_sp) {
         t275.data = (uint8_t *)((old_g.base)); t275.len = (old_g.len);
         t276.hdr = (gs_rhdr *)&old_doc_g; t276.stk = GS(gs_sp + 14);
         t277.hdr = (gs_rhdr *)&old_decoded_g; t277.stk = GS(gs_sp + 15);
+        GS(gs_sp + 14)->top = t335;
         json_Node_g4 * t278 = json_parse_g4(t275.data, t275.len, t276.hdr, t276.stk, t277.hdr, t277.stk, GS(gs_sp + 16), &old_err_g.len, gs_sp + 17);
+        t335 = GS(gs_sp + 14)->top;
         old_root_g = t278;
         int64_t old_rev_g;
         uint8_t old_ok_g;
@@ -5194,10 +5211,10 @@ static void main_g(int64_t gs_sp) {
             reply_g(t284.data, t284.len, t285.data, t285.len, gs_sp + 17);
             GS(gs_sp + 16)->top = old_err_g.base;
             GS(gs_sp + 15)->top = old_decoded_g.base;
-            GS(gs_sp + 14)->top = old_doc_g.base;
+            t335 = old_doc_g.base;
             GS(gs_sp + 13)->top = old_g.base;
-            t317 = path_g.base;
-            t315 = t244.base;
+            t334 = path_g.base;
+            t332 = t244.base;
             GS(gs_sp + 10)->top = pub_g.base;
             GS(gs_sp + 9)->top = pub_text_g.base;
             GS(gs_sp + 8)->top = sig_g.base;
@@ -5209,67 +5226,68 @@ static void main_g(int64_t gs_sp) {
             GS(gs_sp + 2)->top = body_g.base;
             GS(gs_sp + 1)->top = length_text_g.base;
             GS(gs_sp + 0)->top = method_g.base;
-            GS(gs_sp + 11)->top = t315;
-            GS(gs_sp + 12)->top = t317;
+            GS(gs_sp + 11)->top = t332;
+            GS(gs_sp + 12)->top = t334;
+            GS(gs_sp + 14)->top = t335;
             return;
         }
         if (!((uint8_t)((int64_t)((int64_t)(rev_g)) > (int64_t)(old_rev_g)))) {
-            uint8_t *t318 = GS(gs_sp + 17)->top;
+            uint8_t *t336 = GS(gs_sp + 17)->top;
             t286.data = ((uint8_t *)gs_str54); t286.len = 12;
             status_g_2 = t286;
-            t287.base = t318; t287.len = 0;
-            uint8_t *t288 = t318;
+            t287.base = t336; t287.len = 0;
+            uint8_t *t288 = t336;
             int64_t t289 = 0;
             int64_t t290 = 19;
-            gs_memcpy(t318, (const uint8_t *)(((uint8_t *)gs_str55)), (size_t)t290);
-            t318 += t290;
+            gs_memcpy(t336, (const uint8_t *)(((uint8_t *)gs_str55)), (size_t)t290);
+            t336 += t290;
             t289 += t290;
-            int64_t t291 = gs_fmt_i64(t318, (int64_t)(old_rev_g));
-            t318 += t291;
+            int64_t t291 = gs_fmt_i64(t336, (int64_t)(old_rev_g));
+            t336 += t291;
             t289 += t291;
             t287.len = t289;
             t292.data = (uint8_t *)((t287.base)); t292.len = (t287.len);
             text_g_2 = t292;
             {
-                uint8_t *t319 = GS(gs_sp + 18)->top;
-                out_g_2.base = t319; out_g_2.len = 0;
+                uint8_t *t337 = GS(gs_sp + 18)->top;
+                out_g_2.base = t337; out_g_2.len = 0;
                 out_g_2.len = 0;
                 int64_t t294 = 8;
-                gs_memcpy(t319, (const uint8_t *)(((uint8_t *)gs_str11)), (size_t)t294);
-                t319 += t294;
+                gs_memcpy(t337, (const uint8_t *)(((uint8_t *)gs_str11)), (size_t)t294);
+                t337 += t294;
                 out_g_2.len += t294;
                 t296 = status_g_2;
                 int64_t t295 = t296.len;
-                gs_memcpy(t319, (const uint8_t *)(t296.data), (size_t)t295);
-                t319 += t295;
+                gs_memcpy(t337, (const uint8_t *)(t296.data), (size_t)t295);
+                t337 += t295;
                 out_g_2.len += t295;
                 int64_t t297 = 30;
-                gs_memcpy(t319, (const uint8_t *)(((uint8_t *)gs_str12)), (size_t)t297);
-                t319 += t297;
+                gs_memcpy(t337, (const uint8_t *)(((uint8_t *)gs_str12)), (size_t)t297);
+                t337 += t297;
                 out_g_2.len += t297;
                 t299 = text_g_2;
                 int64_t t298 = t299.len;
-                gs_memcpy(t319, (const uint8_t *)(t299.data), (size_t)t298);
-                t319 += t298;
+                gs_memcpy(t337, (const uint8_t *)(t299.data), (size_t)t298);
+                t337 += t298;
                 out_g_2.len += t298;
                 int64_t t300 = 1;
-                gs_memcpy(t319, (const uint8_t *)(((uint8_t *)gs_str13)), (size_t)t300);
-                t319 += t300;
+                gs_memcpy(t337, (const uint8_t *)(((uint8_t *)gs_str13)), (size_t)t300);
+                t337 += t300;
                 out_g_2.len += t300;
                 t301.data = (uint8_t *)((out_g_2.base)); t301.len = (out_g_2.len);
                 t302 = t301;
                 gs_os_write_stdout(t302);
                 gs_os_flush_stdout();
-                GS(gs_sp + 18)->top = t319;
+                GS(gs_sp + 18)->top = t337;
                 GS(gs_sp + 18)->top = out_g_2.base;
             }
-            t318 = t287.base;
+            t336 = t287.base;
             GS(gs_sp + 16)->top = old_err_g.base;
             GS(gs_sp + 15)->top = old_decoded_g.base;
-            GS(gs_sp + 14)->top = old_doc_g.base;
+            t335 = old_doc_g.base;
             GS(gs_sp + 13)->top = old_g.base;
-            t317 = path_g.base;
-            t315 = t244.base;
+            t334 = path_g.base;
+            t332 = t244.base;
             GS(gs_sp + 10)->top = pub_g.base;
             GS(gs_sp + 9)->top = pub_text_g.base;
             GS(gs_sp + 8)->top = sig_g.base;
@@ -5281,29 +5299,53 @@ static void main_g(int64_t gs_sp) {
             GS(gs_sp + 2)->top = body_g.base;
             GS(gs_sp + 1)->top = length_text_g.base;
             GS(gs_sp + 0)->top = method_g.base;
-            GS(gs_sp + 11)->top = t315;
-            GS(gs_sp + 12)->top = t317;
-            GS(gs_sp + 17)->top = t318;
+            GS(gs_sp + 11)->top = t332;
+            GS(gs_sp + 12)->top = t334;
+            GS(gs_sp + 14)->top = t335;
+            GS(gs_sp + 17)->top = t336;
             return;
-            GS(gs_sp + 17)->top = t318;
+            GS(gs_sp + 17)->top = t336;
         }
         GS(gs_sp + 16)->top = old_err_g.base;
         GS(gs_sp + 15)->top = old_decoded_g.base;
-        GS(gs_sp + 14)->top = old_doc_g.base;
+        t335 = old_doc_g.base;
     }
-    t303.data = (uint8_t *)((path_g.base)); t303.len = (path_g.len);
-    t304 = t303;
-    t305.data = (uint8_t *)((body_g.base)); t305.len = (body_g.len);
-    t306 = t305;
-    uint8_t t307 = gs_os_write_file_atomic(t304, t306);
-    if (!(t307)) {
-        t308.data = ((uint8_t *)gs_str47); t308.len = 25;
-        t309 = t308;
-        t310.data = ((uint8_t *)gs_str56); t310.len = 22;
-        reply_g(t309.data, t309.len, t310.data, t310.len, gs_sp + 14);
+    t303.base = t335; t303.len = 0;
+    uint8_t *t304 = t335;
+    int64_t t305 = 0;
+    int64_t t307 = (dir_g.len);
+    int64_t t306 = t307;
+    gs_memcpy(t335, (const uint8_t *)((dir_g.base)), (size_t)t306);
+    t335 += t306;
+    t305 += t306;
+    int64_t t308 = 9;
+    gs_memcpy(t335, (const uint8_t *)(((uint8_t *)gs_str49)), (size_t)t308);
+    t335 += t308;
+    t305 += t308;
+    t310 = id_g;
+    int64_t t309 = t310.len;
+    gs_memcpy(t335, (const uint8_t *)(t310.data), (size_t)t309);
+    t335 += t309;
+    t305 += t309;
+    int64_t t311 = 4;
+    gs_memcpy(t335, (const uint8_t *)(((uint8_t *)gs_str56)), (size_t)t311);
+    t335 += t311;
+    t305 += t311;
+    t303.len = t305;
+    t312.data = (uint8_t *)((t303.base)); t312.len = (t303.len);
+    t313 = t312;
+    t314.data = (uint8_t *)((sig_text_g.base)); t314.len = (sig_text_g.len);
+    t315 = t314;
+    uint8_t t316 = gs_os_write_file_atomic(t313, t315);
+    if (!(t316)) {
+        t317.data = ((uint8_t *)gs_str47); t317.len = 25;
+        t318 = t317;
+        t319.data = ((uint8_t *)gs_str57); t319.len = 26;
+        reply_g(t318.data, t318.len, t319.data, t319.len, gs_sp + 15);
+        t335 = t303.base;
         GS(gs_sp + 13)->top = old_g.base;
-        t317 = path_g.base;
-        t315 = t244.base;
+        t334 = path_g.base;
+        t332 = t244.base;
         GS(gs_sp + 10)->top = pub_g.base;
         GS(gs_sp + 9)->top = pub_text_g.base;
         GS(gs_sp + 8)->top = sig_g.base;
@@ -5315,19 +5357,52 @@ static void main_g(int64_t gs_sp) {
         GS(gs_sp + 2)->top = body_g.base;
         GS(gs_sp + 1)->top = length_text_g.base;
         GS(gs_sp + 0)->top = method_g.base;
-        GS(gs_sp + 11)->top = t315;
-        GS(gs_sp + 12)->top = t317;
+        GS(gs_sp + 11)->top = t332;
+        GS(gs_sp + 12)->top = t334;
+        GS(gs_sp + 14)->top = t335;
         return;
     }
-    t311.data = ((uint8_t *)gs_str57); t311.len = 11;
-    t312 = t311;
-    t313.data = ((uint8_t *)gs_str58); t313.len = 5;
-    reply_g(t312.data, t312.len, t313.data, t313.len, gs_sp + 14);
-    GS(gs_sp + 12)->top = t317;
+    t320.data = (uint8_t *)((path_g.base)); t320.len = (path_g.len);
+    t321 = t320;
+    t322.data = (uint8_t *)((body_g.base)); t322.len = (body_g.len);
+    t323 = t322;
+    uint8_t t324 = gs_os_write_file_atomic(t321, t323);
+    if (!(t324)) {
+        t325.data = ((uint8_t *)gs_str47); t325.len = 25;
+        t326 = t325;
+        t327.data = ((uint8_t *)gs_str58); t327.len = 22;
+        reply_g(t326.data, t326.len, t327.data, t327.len, gs_sp + 15);
+        t335 = t303.base;
+        GS(gs_sp + 13)->top = old_g.base;
+        t334 = path_g.base;
+        t332 = t244.base;
+        GS(gs_sp + 10)->top = pub_g.base;
+        GS(gs_sp + 9)->top = pub_text_g.base;
+        GS(gs_sp + 8)->top = sig_g.base;
+        GS(gs_sp + 7)->top = sig_text_g.base;
+        GS(gs_sp + 6)->top = dir_g.base;
+        GS(gs_sp + 5)->top = err_g.base;
+        GS(gs_sp + 4)->top = decoded_g.base;
+        GS(gs_sp + 3)->top = doc_g.base;
+        GS(gs_sp + 2)->top = body_g.base;
+        GS(gs_sp + 1)->top = length_text_g.base;
+        GS(gs_sp + 0)->top = method_g.base;
+        GS(gs_sp + 11)->top = t332;
+        GS(gs_sp + 12)->top = t334;
+        GS(gs_sp + 14)->top = t335;
+        return;
+    }
+    t328.data = ((uint8_t *)gs_str59); t328.len = 11;
+    t329 = t328;
+    t330.data = ((uint8_t *)gs_str60); t330.len = 5;
+    reply_g(t329.data, t329.len, t330.data, t330.len, gs_sp + 15);
+    t335 = t303.base;
+    GS(gs_sp + 12)->top = t334;
+    GS(gs_sp + 14)->top = t335;
     GS(gs_sp + 13)->top = old_g.base;
     GS(gs_sp + 12)->top = path_g.base;
-    t315 = t244.base;
-    GS(gs_sp + 11)->top = t315;
+    t332 = t244.base;
+    GS(gs_sp + 11)->top = t332;
     GS(gs_sp + 10)->top = pub_g.base;
     GS(gs_sp + 9)->top = pub_text_g.base;
     GS(gs_sp + 8)->top = sig_g.base;
@@ -5516,7 +5591,7 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
                 L6:;
                 {
                     json_Node_g4 * t9;
-                    t10.data = ((uint8_t *)gs_str59); t10.len = 14;
+                    t10.data = ((uint8_t *)gs_str61); t10.len = 14;
                     json_Node_g4 * t11 = json_parse_error_g4(t10.data, t10.len, pos_g, gs_dst1, &(*gs_rl1), gs_sp + 1);
                     t123 = outer_g.base;
                     GS(gs_sp + 0)->top = t123;
@@ -5550,7 +5625,7 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
                         }
                     }
                     json_Node_g4 * t19;
-                    t20.data = ((uint8_t *)gs_str60); t20.len = 10;
+                    t20.data = ((uint8_t *)gs_str62); t20.len = 10;
                     json_Node_g4 * t21 = json_parse_error_g4(t20.data, t20.len, pos_g, gs_dst1, &(*gs_rl1), gs_sp + 1);
                     t123 = outer_g.base;
                     GS(gs_sp + 0)->top = t123;
@@ -5567,7 +5642,7 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
                 L24:;
                 {
                     json_Node_g4 * t27;
-                    t28.data = ((uint8_t *)gs_str61); t28.len = 12;
+                    t28.data = ((uint8_t *)gs_str63); t28.len = 12;
                     json_Node_g4 * t29 = json_parse_error_g4(t28.data, t28.len, pos_g, gs_dst1, &(*gs_rl1), gs_sp + 1);
                     t123 = outer_g.base;
                     GS(gs_sp + 0)->top = t123;
@@ -5581,14 +5656,14 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
             }
             L3:;
         } else {
-            t30.data = ((uint8_t *)gs_str62); t30.len = 0;
+            t30.data = ((uint8_t *)gs_str64); t30.len = 0;
             key_g = t30;
         }
         int64_t t31 = json_skip_space_g4(text_g.data, text_g.len, pos_g);
         pos_g = t31;
         if (!((uint8_t)((int64_t)((int64_t)(pos_g)) < (int64_t)((text_g.len))))) {
             json_Node_g4 * t32;
-            t33.data = ((uint8_t *)gs_str63); t33.len = 23;
+            t33.data = ((uint8_t *)gs_str65); t33.len = 23;
             json_Node_g4 * t34 = json_parse_error_g4(t33.data, t33.len, pos_g, gs_dst1, &(*gs_rl1), gs_sp + 1);
             t123 = outer_g.base;
             GS(gs_sp + 0)->top = t123;
@@ -5639,7 +5714,7 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
                 goto L37;
             }
             if ((uint8_t)((uint8_t)((uint8_t)(c_g_2)) == (uint8_t)(116))) {
-                t44.data = ((uint8_t *)gs_str64); t44.len = 4;
+                t44.data = ((uint8_t *)gs_str66); t44.len = 4;
                 json_word_g4(t44.data, t44.len, &pos_g, &text_g, gs_sp + 1);
                 if (gs_rf) {
                     if (gs_rf == 1) {
@@ -5664,7 +5739,7 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
                 goto L37;
             }
             if ((uint8_t)((uint8_t)((uint8_t)(c_g_2)) == (uint8_t)(102))) {
-                t47.data = ((uint8_t *)gs_str65); t47.len = 5;
+                t47.data = ((uint8_t *)gs_str67); t47.len = 5;
                 json_word_g4(t47.data, t47.len, &pos_g, &text_g, gs_sp + 1);
                 if (gs_rf) {
                     if (gs_rf == 1) {
@@ -5689,7 +5764,7 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
                 goto L37;
             }
             if ((uint8_t)((uint8_t)((uint8_t)(c_g_2)) == (uint8_t)(110))) {
-                t50.data = ((uint8_t *)gs_str66); t50.len = 4;
+                t50.data = ((uint8_t *)gs_str68); t50.len = 4;
                 json_word_g4(t50.data, t50.len, &pos_g, &text_g, gs_sp + 1);
                 if (gs_rf) {
                     if (gs_rf == 1) {
@@ -5720,13 +5795,13 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
                 if (!((uint8_t)((uint8_t)((uint8_t)(c_g_2)) <= (uint8_t)(57)))) goto L54;
                 L55:;
                 {
-                    t56.data = ((uint8_t *)gs_str67); t56.len = 10;
+                    t56.data = ((uint8_t *)gs_str69); t56.len = 10;
                     what_g = t56;
                 }
                 goto L57;
                 L54:;
                 {
-                    t58.data = ((uint8_t *)gs_str68); t58.len = 16;
+                    t58.data = ((uint8_t *)gs_str70); t58.len = 16;
                     what_g = t58;
                 }
                 L57:;
@@ -5867,10 +5942,10 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
             if (!((uint8_t)((uint8_t)(t94) == (uint8_t)(t95)))) {
                 json_Node_g4 * t96;
                 if (is_obj_g) {
-                    t98.data = ((uint8_t *)gs_str69); t98.len = 19;
+                    t98.data = ((uint8_t *)gs_str71); t98.len = 19;
                     t97 = t98;
                 } else {
-                    t99.data = ((uint8_t *)gs_str70); t99.len = 19;
+                    t99.data = ((uint8_t *)gs_str72); t99.len = 19;
                     t97 = t99;
                 }
                 json_Node_g4 * t100 = json_parse_error_g4(t97.data, t97.len, pos_g, gs_dst1, &(*gs_rl1), gs_sp + 1);
@@ -5916,10 +5991,10 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
         if (!((uint8_t)((int64_t)((int64_t)(((outer_g.len)))) == (int64_t)(0)))) {
             json_Node_g4 * t110;
             if (is_obj_g) {
-                t112.data = ((uint8_t *)gs_str71); t112.len = 15;
+                t112.data = ((uint8_t *)gs_str73); t112.len = 15;
                 t111 = t112;
             } else {
-                t113.data = ((uint8_t *)gs_str72); t113.len = 14;
+                t113.data = ((uint8_t *)gs_str74); t113.len = 14;
                 t111 = t113;
             }
             json_Node_g4 * t114 = json_parse_error_g4(t111.data, t111.len, pos_g, gs_dst1, &(*gs_rl1), gs_sp + 1);
@@ -5930,7 +6005,7 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
         }
         if (!((uint8_t)((int64_t)((int64_t)(pos_g)) == (int64_t)((text_g.len))))) {
             json_Node_g4 * t115;
-            t116.data = ((uint8_t *)gs_str73); t116.len = 14;
+            t116.data = ((uint8_t *)gs_str75); t116.len = 14;
             json_Node_g4 * t117 = json_parse_error_g4(t116.data, t116.len, pos_g, gs_dst1, &(*gs_rl1), gs_sp + 1);
             t123 = outer_g.base;
             GS(gs_sp + 0)->top = t123;
@@ -5942,7 +6017,7 @@ static json_Node_g4 * json_parse_g4(void *text_g_data, int64_t text_g_len, gs_rh
         uint8_t *t119 = gs_dst1->top;
         int64_t t120 = 0;
         int64_t t121 = 0;
-        gs_memcpy(gs_dst1->top, (const uint8_t *)(((uint8_t *)gs_str62)), (size_t)t121);
+        gs_memcpy(gs_dst1->top, (const uint8_t *)(((uint8_t *)gs_str64)), (size_t)t121);
         gs_dst1->top += t121;
         t120 += t121;
         (*gs_rl1) = t120;
@@ -6024,7 +6099,7 @@ static sl_u8 json_string_g4(int64_t *pos_g, sl_u8 *text_g, gs_rref *decoded_g, i
         }
     }
     gs_fval_1_1 = gs_fdst_1_1->top;
-    t11.data = ((uint8_t *)gs_str60); t11.len = 10;
+    t11.data = ((uint8_t *)gs_str62); t11.len = 10;
     json_Node_g4 * t12 = json_parse_error_g4(t11.data, t11.len, (*pos_g), gs_fdst_1_1, &gs_lret_1_1, gs_sp + 0);
     gs_lret_1_0 = t12;
     gs_rf = 1;
@@ -6408,7 +6483,7 @@ static GS_INLINE json_Node_g4 * json_parse_error_g4(void *what_g_data, int64_t w
     uint8_t *t1 = t9;
     int64_t t2 = 0;
     int64_t t3 = 6;
-    gs_memcpy(t9, (const uint8_t *)(((uint8_t *)gs_str74)), (size_t)t3);
+    gs_memcpy(t9, (const uint8_t *)(((uint8_t *)gs_str76)), (size_t)t3);
     t9 += t3;
     t2 += t3;
     t5 = what_g;
@@ -6417,7 +6492,7 @@ static GS_INLINE json_Node_g4 * json_parse_error_g4(void *what_g_data, int64_t w
     t9 += t4;
     t2 += t4;
     int64_t t6 = 9;
-    gs_memcpy(t9, (const uint8_t *)(((uint8_t *)gs_str75)), (size_t)t6);
+    gs_memcpy(t9, (const uint8_t *)(((uint8_t *)gs_str77)), (size_t)t6);
     t9 += t6;
     t2 += t6;
     int64_t t7 = gs_fmt_i64(t9, (int64_t)(pos_g));
@@ -6450,7 +6525,7 @@ static void json_word_g4(void *w_g_data, int64_t w_g_len, int64_t *pos_g, sl_u8 
     L1:;
     {
         gs_fval_1_1 = gs_fdst_1_1->top;
-        t8.data = ((uint8_t *)gs_str68); t8.len = 16;
+        t8.data = ((uint8_t *)gs_str70); t8.len = 16;
         json_Node_g4 * t9 = json_parse_error_g4(t8.data, t8.len, (*pos_g), gs_fdst_1_1, &gs_lret_1_1, gs_sp + 0);
         gs_lret_1_0 = t9;
         gs_rf = 1;
@@ -7773,7 +7848,7 @@ static GS_INLINE sl_u8 json_as_string_g4(json_Node_g4 * n_g, uint8_t *gs_r1) {
     sl_u8 t7;
     sl_u8 t9;
     if (!(n_g)) {
-        t1.data = ((uint8_t *)gs_str62); t1.len = 0;
+        t1.data = ((uint8_t *)gs_str64); t1.len = 0;
         t0 = t1;
         uint8_t t2;
         t2 = 0;
@@ -7794,7 +7869,7 @@ static GS_INLINE sl_u8 json_as_string_g4(json_Node_g4 * n_g, uint8_t *gs_r1) {
     } break;
     default: {
         {
-            t7.data = ((uint8_t *)gs_str62); t7.len = 0;
+            t7.data = ((uint8_t *)gs_str64); t7.len = 0;
             t6 = t7;
             uint8_t t8;
             t8 = 0;
@@ -8501,7 +8576,7 @@ static void gs_init_globals(void) {
     GS_GL->argv_text_g.base = (&GS_GL->gs_gstk_argv_text_g)->top;
     GS_GL->argv_text_g.len = 0;
     GS_GL->argv_text_g.len = 0;
-    t0.data = ((uint8_t *)gs_str76); t0.len = 200;
+    t0.data = ((uint8_t *)gs_str78); t0.len = 200;
     GS_GL->json_DIGIT_PAIRS_g4 = t0;
     t1.e[0] = 1.0;
     t1.e[1] = 10.0;

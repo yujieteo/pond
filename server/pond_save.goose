@@ -1,6 +1,6 @@
 // The Pond save service: a CGI program behind OpenBSD httpd and slowcgi.
 // It takes one signed change to one entry on POST /pond/entry, and keeps
-// the newest revision of each entry as a file. docs/protocol.md is the
+// the newest revision of each entry as a file, with its signature beside it. docs/protocol.md is the
 // contract; build.sh makes the C and the program.
 
 import std;
@@ -119,6 +119,9 @@ fn main() {
         guard old_ok else { reply("500 Internal Server Error", "the saved entry is damaged"); return; }
         guard rev > old_rev else { reply("409 Conflict", str("the server has rev ", old_rev)); return; }
     }
+    // The signature goes first, so that a body on the disk always has its own
+    // signature or the one after it. pond_node checks each body against it.
+    guard write_file_atomic(str(dir, "/entries/", id, ".sig"), sig_text) else { reply("500 Internal Server Error", "cannot write the signature"); return; }
     guard write_file_atomic(path, body) else { reply("500 Internal Server Error", "cannot write the entry"); return; }
     reply("201 Created", "saved");
 }
