@@ -87,11 +87,12 @@ The writer `open` also calls `fsync` on the directory. Thus the name of a new se
 | What the store finds | What it does |
 |---|---|
 | A good record. | It adds the record to the index. |
-| Bytes that are not a good record, and no good record after them, with no magic or fewer bytes than their length: a torn record from a crash in the middle of a write, or zeros from the file system. | A reader does not serve the bytes, and does not change the file. A writer, which holds the lock, cuts the bytes off the file before it appends. |
+| Bytes that are not a good record, and no good record after them, with no magic, a length that is not 1 to 8192, or fewer bytes than their length: a torn record from a crash in the middle of a write, or zeros from the file system. | A reader does not serve the bytes, and does not change the file. A writer, which holds the lock, cuts the bytes off the file before it appends. |
 | Bytes that are not a good record, and no good record after them, with the magic, a length of 1 to 8192 and all of the bytes: damage in the last record. | The store does not serve the bytes, and adds them to the damage list. No write cuts the damage, each `append` gives `Failed`, and `compact` refuses to run. |
 | Bytes that are not a good record, and a good record after them: damage in the middle. | The store does not serve the bytes, and adds them to the damage list. It reads the records after them as usual. No write cuts the damage, and `compact` refuses to run. |
 
 A write gives the bytes of a record in sequence, so a crash in the middle of a write leaves fewer bytes than the length. Thus a record with all of its bytes and a bad checksum is damage to an acknowledged record, not a torn write.
+A change in the magic of the last record makes it look like a torn record. A change in its length to a value that is not 1 to 8192, or past the end of the file, does the same. The writer cuts it.
 The writer refuses to append after damage at the end. Reason: an append after it hides the damaged record from the operator, and the bytes of the damage stay for a repair.
 
 A reader that reads while a writer writes can see a part of a record at the end. That part is a torn record to the reader, so the reader does not serve it. It reads the whole record at its next `refresh`.
@@ -125,7 +126,7 @@ With that flag, the variable `STORE_CRASH_AFTER=<n>` kills the process with SIGK
 - **The rules**: create, the same body, a different body at the same `rev`, a higher `rev`, a replay of an old `rev`, a `remove`, a replay after a `remove`, 8 bodies that are not valid, and a body over 8192 bytes.
 - **The index**: the order by date and change, the list by tag with escapes, a change of tag, a removed entry, a change that moves an entry up, and a reader that opens the same store.
 - **Torn records**: a cut of a segment of 12 records at each byte (1,323 cuts). After each cut, a reader serves only the whole records, and a writer cuts the torn bytes off and appends. It also adds tails of zeros and of random bytes.
-- **Damage**: 2,000 trials that change 1 byte or a run of 1 to 64 bytes in a segment of 40 records. After each trial, the store serves all the records that the damage did not hit, serves no changed body, reports the damage, does not cut it, and refuses to compact. A change of 1 byte in the last record is also damage: the writer reports it, does not cut it, and refuses to append. Zeros in place of the last record are a torn record: the writer cuts them off and appends.
+- **Damage**: 2,000 trials that change 1 byte or a run of 1 to 64 bytes in a segment of 40 records. After each trial, the store serves all the records that the damage did not hit, serves no changed body, reports the damage, does not cut it, and refuses to compact. A change of 1 byte in the body of the last record is also damage: the writer reports it, does not cut it, and refuses to append. Zeros in place of the last record are a torn record: the writer cuts them off and appends.
 - **Compaction**: 201 records of 7 entries become 7 records. The newest bodies, the order and the rule stay the same, and a reader sees the new segment.
 - **Threads**: 8 writer threads make 150 appends each to 10 entries. Each writer uses the `rev` after the one that it saw last, as the outbox of the phone does after a 409. 2 reader threads call `refresh` at the same time and check what they see.
 
@@ -133,9 +134,9 @@ With that flag, the variable `STORE_CRASH_AFTER=<n>` kills the process with SIGK
 
 - **1,000 kills at random points**: each kill is at a random byte from 1 to 600 of the writes, so most kills occur in the middle of a record. Each 25th pass is a compaction.
 - **100 kills at a random time**: SIGKILL from outside, 1 to 60 ms after the writer starts.
+- **6 writer processes** on one store, with the same rule as the writer threads.
 
 A kill counts only if the process died by SIGKILL. A pass in which the process ends before its kill point does not count. The test runs until it has 1,000 kills and 100 kills.
-- **6 writer processes** on one store, with the same rule as the writer threads.
 
 After each kill, the test checks these points:
 
