@@ -70,7 +70,7 @@ pond_read sends only the public fields of the list above, so a file with any oth
 
 | Path | What it gives |
 |---|---|
-| `/pond/entries.json` | `{"entries":[{"entry":{...},"id":"e1","rev":2}, ...]}`, for the app. |
+| `/pond/entries.json` | `{"entries":[{"entry":{...},"id":"e1","rev":2}, ...]}`, for the app. pond_node adds `"conflicts":[{"id":"e1","rev":2,"siblings":[{"entry":{...},"op":"put"},{"op":"remove"}]}, ...]` if an entry has more than one body at its top `rev` (`docs/store.md`). Each sibling has only the public fields. The app shows the siblings, and a save of the pick at `rev` + 1 replaces them. |
 | `/log/` (and `/log`) | The site template `/web/site/log/template.html` in the chroot, with the line `<!-- pond:entries -->` replaced by one `<article>` for each entry: the date, the title (a link if the entry has a web link), the `made` text and the interest. With no template, or no marker line, a plain page. |
 | `/log/feed.xml` | RSS 2.0: one item for each entry, with the title, the link, the `made` text, the id as `guid` and the date as `pubDate`. An item whose date is not `YYYY-MM-DD` in digits has no `pubDate`. |
 
@@ -85,7 +85,7 @@ The server is two CGI programs under httpd and slowcgi: pond_save for `POST /pon
 Goose compiles each `.goose` file to standalone C on the Mac, and the C is in the repository beside it.
 The C needs only a C compiler, and libcrypto for pond_save, so it builds static on OpenBSD and runs in the chroot.
 `render.goose` makes the pages of the read side. pond_read and the daemon pond_node (`docs/store.md`) both use it, so they serve the same bytes.
-`pond_verify.h`, `pond_lock.h`, `pond_read.h`, `pond_node.h`, `pond_net.h` and `pond_spawn.h` are the only C that is not generated. `pond_read.h` does the unveil and the pledge, and gets the time of the last change of a file. `pond_verify.h` checks the signature with the EVP calls of libcrypto, which are the same in LibreSSL and OpenSSL. `pond_lock.h` locks with `flock`.
+`pond_verify.h`, `pond_lock.h`, `pond_read.h`, `pond_node.h`, `pond_net.h`, `pond_sync.h` and `pond_spawn.h` are the only C that is not generated. `pond_sync.h` signs the sync requests of pond_node with the node key, and makes the SHA-256 of the index hash. `pond_read.h` does the unveil and the pledge, and gets the time of the last change of a file. `pond_verify.h` checks the signature with the EVP calls of libcrypto, which are the same in LibreSSL and OpenSSL. `pond_lock.h` locks with `flock`.
 
 ```
 server/build.sh c   # on the Mac, with GOOSE=<path to goose>: make the C again, then build

@@ -96,7 +96,23 @@ fn item_of(text: u8[:], stamp: i64) -> Item, bool {
     }, true;
 }
 
-fn format_entries_json(out: u8[>..]&, order: Item&[:]) {
+// One body at the top rev of an entry with siblings, for the conflicts list
+// of the app: {"entry":{...},"op":"put"} with the public fields, or
+// {"op":"remove"}.
+fn format_sibling(out: u8[>..]&, text: u8[:]) {
+    var doc: json::Node[>..] = [];
+    var decoded: u8[>..] = [];
+    let root, err = json::parse(text, doc, decoded);
+    let entry = json::member(root, "entry");
+    guard entry else { out.append("{\"op\":\"remove\"}"); return; }
+    out.append("{\"entry\":");
+    format_public(out, entry);
+    out.append(",\"op\":\"put\"}");
+}
+
+// conflicts is the items of the conflicts list, from pond_node, or empty:
+// then the reply has no conflicts list.
+fn format_entries_json(out: u8[>..]&, order: Item&[:], conflicts: u8[:]) {
     out.append("{\"entries\":[");
     for it, k in order {
         if k > 0 { out.push(','); }
@@ -108,7 +124,9 @@ fn format_entries_json(out: u8[>..]&, order: Item&[:]) {
         json::format_int(out, it.rev);
         out.push('}');
     }
-    out.append("]}\n");
+    out.push(']');
+    if conflicts.len > 0 { format(out, ",\"conflicts\":[", conflicts, "]"); }
+    out.append("}\n");
 }
 
 // One <article> for each entry. The template's CSS gives the style.
@@ -223,14 +241,15 @@ fn format_reply(out: u8[>..]&, status: u8[:], content_type: u8[:], body: u8[:]) 
 
 // The whole CGI reply to a request: the Status and Content-Type lines, a
 // blank line and the body. method and uri are the CGI REQUEST_METHOD and
-// REQUEST_URI, and order is the entries, newest first.
-fn reply(out: u8[>..]&, method: u8[:], uri: u8[:], template_path: u8[:], order: Item&[:]) {
+// REQUEST_URI, order is the entries, newest first, and conflicts is for
+// format_entries_json.
+fn reply(out: u8[>..]&, method: u8[:], uri: u8[:], template_path: u8[:], order: Item&[:], conflicts: u8[:]) {
     guard method == "GET" else { format_reply(out, "405 Method Not Allowed", "text/plain", "use GET\n"); return; }
     let q = find(uri, "?");
     let path = if q >= 0 { uri[..q] } else { uri[..] };
     var body: u8[>..] = [];
     if path == "/pond/entries.json" {
-        format_entries_json(body, order);
+        format_entries_json(body, order, conflicts);
         format_reply(out, "200 OK", "application/json", body);
     } else if path == "/log" || path == "/log/" {
         var template: u8[>..] = [];
