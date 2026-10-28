@@ -1,13 +1,15 @@
 #!/bin/sh
-# Builds the save service from the committed C: on the Mac for the tests,
-# and on OpenBSD for the server. `build.sh c` first makes pond_save.c again
-# from pond_save.goose; that needs goose (GOOSE=path) and runs on the Mac.
+# Builds the save and read services from the committed C: on the Mac for the
+# tests, and on OpenBSD for the server. `build.sh c` first makes pond_save.c
+# and pond_read.c again from the .goose files; that needs goose (GOOSE=path)
+# and runs on the Mac.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 
 if [ "${1:-}" = c ]; then
     # From inside server/, so that the C names its source with no local path.
     (cd "$here" && "${GOOSE:-goose}" --standalone --include pond_verify.h --include pond_lock.h -o pond_save.c pond_save.goose)
+    (cd "$here" && "${GOOSE:-goose}" --standalone --include pond_read.h -o pond_read.c pond_read.goose)
 fi
 
 # OpenBSD has libcrypto in base. The Mac has none for programs, so use Homebrew's.
@@ -20,3 +22,5 @@ fi
 # A data stack reserves address space; 16 MB each is far more than a request needs.
 cc -O2 $static -DGS_STACK_RESERVE='(16ull<<20)' -I"$here" $crypto_cflags \
     -o "$here/pond_save" "$here/pond_save.c" $crypto_libs -lm -pthread
+cc -O2 $static -DGS_STACK_RESERVE='(16ull<<20)' -I"$here" \
+    -o "$here/pond_read" "$here/pond_read.c" -lm -pthread

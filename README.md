@@ -2,9 +2,9 @@
 A fun, low-energy media and experiments companion: iOS app, signed log, stream on teoyujie.org/log
 
 - `docs/concepts.md`: the conceptual model.
-- `docs/protocol.md`: the signed save request and the server's replies.
+- `docs/protocol.md`: the signed save request, the server's replies and the read side.
 - `PondKit/`: the Swift package for the app: entry format and signing, the plan parser, the host-to-domain guess, and "One paper".
-- `server/`: the save service, in Goose, with the generated C beside it.
+- `server/`: the save service and the read service, in Goose, with the generated C beside them.
 - `mac/pond-key/`: the Mac enrol key (R7 in `docs/concepts.md`): a command-line tool that makes a Secure Enclave key and signs request bodies.
 
 ## Test
