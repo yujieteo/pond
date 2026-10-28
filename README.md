@@ -5,6 +5,7 @@ A fun, low-energy media and experiments companion: iOS app, signed log, stream o
 - `docs/protocol.md`: the signed save request, the server's replies and the read side.
 - `PondKit/`: the Swift package for the app: entry format and signing, the plan parser, the host-to-domain guess, and "One paper".
 - `server/`: the save service and the read service, in Goose, with the generated C beside them.
+- `app/`: the iOS app, Waldenlog on the Home Screen: Today, the entry sheet, the phone key and the outbox.
 - `mac/pond-key/`: the Mac enrol key (R7 in `docs/concepts.md`): a command-line tool that makes a Secure Enclave key and signs request bodies.
 
 ## Test
@@ -15,7 +16,7 @@ swift test --package-path PondKit
 swift test --package-path mac/pond-key
 ```
 
-`server/test.sh` needs `openssl`. One PondKit test and one pond-key test run the built `server/pond_save`, so build the server first.
+`server/test.sh` needs `openssl`. Two PondKit tests and one pond-key test run the built `server/pond_save`, so build the server first.
 
 ## The Mac key
 
@@ -56,3 +57,25 @@ The signed `POST /pond/key` enrol request is a later task. Until then, use `pond
    ```
 
    The reply is `Status: 201` for a new entry. Delete the test directory after the test: `rm -r "$dir"`.
+
+## The app
+
+`app/Pond.xcodeproj` builds the iOS app. The Home Screen name is Waldenlog. The code, the bundle ID `org.teoyujie.pond` and the server paths keep the name pond.
+
+- Today shows the menu (today's slot from the plan, one entry that you marked "good" or "loved it", one grid cell not visited yet this year), the "Every day" row and the entries of today.
+- The phone keeps each entry in `journal.json` first. The outbox sends each change, signed, to `POST /pond/entry`, and sends a failed change again at the next change, when the app opens, or after a minute. After a 409, it sends the change again with the revision after the server's.
+- The key is a P-256 key in the Secure Enclave, made at the first send or at "Show key". The simulator has no Secure Enclave, so it uses a software key.
+- The plan is the copy of `media-plan.md` in the PondKit test fixtures, until the plan editor reads the site repo.
+
+To enrol the phone, tap "Show key" and put the text in `/var/www/pond/keys/<name>.pub` on the server.
+
+The launch argument `-server <url>` changes the save service from `https://teoyujie.org`, for example to a local test server.
+`PondUITests` is the simulator proof: it enrols the key on a local test server, records one entry and waits until the server accepts it.
+Run it against the built server programs:
+
+```
+dir=$(mktemp -d) && mkdir "$dir/keys" "$dir/entries" && python3 server/local.py "$dir" &
+TEST_RUNNER_POND_KEYS="$dir/keys" TEST_RUNNER_POND_SHOTS=<screenshot dir> \
+    xcodebuild test -project app/Pond.xcodeproj -scheme Pond -destination 'platform=iOS Simulator,name=iPhone 17'
+curl http://127.0.0.1:8787/log/
+```
