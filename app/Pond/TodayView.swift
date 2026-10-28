@@ -18,7 +18,6 @@ struct Toast: Identifiable {
 /// Today (#today in the mock-up): the menu (R2), "Every day" (R13) and the entries of today.
 struct TodayView: View {
     @Environment(Store.self) private var store
-    @State private var picked: Int?
     @State private var editing: Editing?
     @State private var toast: Toast?
     @State private var showKey = false
@@ -27,8 +26,12 @@ struct TodayView: View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(Date.now.formatted(Date.VerbatimFormatStyle(format: "\(weekday: .wide) \(day: .defaultDigits) \(month: .wide)", locale: .current, timeZone: .current, calendar: .current)).uppercased())
-                        .font(.system(size: 13, weight: .medium)).tracking(0.5).foregroundStyle(Color.muted)
+                    HStack {
+                        Text(Date.now.formatted(Date.VerbatimFormatStyle(format: "\(weekday: .wide) \(day: .defaultDigits) \(month: .wide)", locale: .current, timeZone: .current, calendar: .current)).uppercased())
+                            .font(.system(size: 13, weight: .medium)).tracking(0.5).foregroundStyle(Color.muted)
+                        Spacer()
+                        inviteTime
+                    }
                     Text("What do you want today?")
                         .font(.serif(32)).padding(.top, 4).padding(.bottom, 16)
                     choices
@@ -74,19 +77,34 @@ struct TodayView: View {
 
     // MARK: the menu
 
+    /// The invite time (R3): the notification comes each day at this time.
+    private var inviteTime: some View {
+        let time = Binding {
+            Calendar.current.date(bySettingHour: store.invite.hour, minute: store.invite.minute, second: 0, of: .now) ?? .now
+        } set: { store.setInviteTime($0) }
+        return HStack(spacing: 4) {
+            Text("⏰").accessibilityHidden(true)
+            DatePicker("Invite time", selection: time, displayedComponents: .hourAndMinute).labelsHidden()
+        }
+    }
+
+    /// The day's choices, and its pick: the same pick as in the notification and the widgets (sync 14).
     private var choices: some View {
-        VStack(spacing: 12) {
-            ForEach(Array(store.choices.enumerated()), id: \.offset) { index, choice in
+        let day = store.inviteToday
+        let picked = day?.done == false ? day?.pick : nil
+        return VStack(spacing: 12) {
+            ForEach(Array((day?.choices ?? []).enumerated()), id: \.offset) { index, choice in
                 choiceCard(choice, picked: picked == index)
                     .opacity(picked == nil || picked == index ? 1 : 0.55)
-                    .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { picked = index } }
+                    .onTapGesture { store.pick(index, on: store.today) }
             }
         }
+        .animation(.easeOut(duration: 0.2), value: picked)
     }
 
     private func choiceCard(_ choice: Choice, picked: Bool) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(icon(choice)).font(.system(size: 18))
+            Text(choice.icon).font(.system(size: 18))
                 .frame(width: 36, height: 36).background(Circle().fill(Color.pondBackground))
             VStack(alignment: .leading, spacing: 4) {
                 Text(choice.why).font(.system(size: 13)).foregroundStyle(Color.muted)
@@ -94,10 +112,9 @@ struct TodayView: View {
                 if picked {
                     HStack(spacing: 8) {
                         Button("Done") {
-                            recorded(store.record(choice.entry))
-                            self.picked = nil
+                            if let id = store.done(on: store.today) { recorded(id) }
                         }.buttonStyle(PillStyle(kind: .primary))
-                        Button("Something else") { self.picked = nil }.buttonStyle(PillStyle(kind: .quiet))
+                        Button("Something else") { store.unpick(on: store.today) }.buttonStyle(PillStyle(kind: .quiet))
                     }.padding(.top, 8)
                 }
             }
@@ -108,14 +125,6 @@ struct TodayView: View {
         .background(RoundedRectangle(cornerRadius: 16).fill(Color.card).shadow(color: .ink.opacity(0.06), radius: 6, y: 3))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(picked ? Color.ink : Color.line, lineWidth: picked ? 2 : 1))
         .contentShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func icon(_ choice: Choice) -> String {
-        switch choice.source {
-        case .slot: choice.entry.domain == 2 ? "🎵" : choice.entry.domain == 5 ? "🎬" : "📄"
-        case .enjoyed: "🎵"
-        case .notVisited: choice.entry.mode == .live ? "🎟" : "🧭"
-        }
     }
 
     // MARK: every day

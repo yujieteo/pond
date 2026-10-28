@@ -99,7 +99,7 @@ public struct Journal: Codable, Equatable, Sendable {
         change(id) { $0.fun = fun }
     }
 
-    public mutating func offer(_ id: String, on day: String) {
+    public mutating func offer(_ id: String, on day: String?) {
         change(id) { $0.offered = day }
     }
 

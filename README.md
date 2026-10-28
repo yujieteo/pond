@@ -68,11 +68,15 @@ The signed `POST /pond/key` enrol request is a later task. Until then, use `pond
 - The phone keeps each entry in `journal.json` first. The outbox sends each change, signed, to `POST /pond/entry`, and sends a failed change again at the next change, when the app opens, or after a minute. After a 409, it sends the change again with the revision after the server's.
 - The key is a P-256 key in the Secure Enclave, made at the first send or at "Show key". The simulator has no Secure Enclave, so it uses a software key.
 - The plan is the copy of `media-plan.md` in the PondKit test fixtures, until the plan editor reads the site repo.
+- The invite is one notification a day at the invite time (⏰ on Today, 19:30 at first), with up to 4 choices as buttons. A pick changes the notification in place to the pick, "✓ Done" and "Something else", with no sound. "✓ Done" records the entry like "Done" on Today. An ignored notification stays until you clear it, and the next day removes it.
+- The app computes the choices of the next 14 days when it schedules them, each time that it opens or that the journal changes. If the app does not open for 14 days, no notification comes after the 14th day.
+- The Home Screen widget (medium or large) and the Lock Screen widget show the same choices or the same pick as the notification. Their buttons run in the app, with the same journal, key and outbox. "Done" on the Lock Screen asks for the unlock, because the Secure Enclave key needs it.
+- The app writes the invite to `invite.json` in the App Group `group.org.teoyujie.pond`, and the widgets read it.
 
 To enrol the phone, tap "Show key" and put the text in `/var/www/pond/keys/<name>.pub` on the server.
 
 The launch argument `-server <url>` changes the save service from `https://teoyujie.org`, for example to a local test server.
-`PondUITests` is the simulator proof: it enrols the key on a local test server, records one entry and waits until the server accepts it.
+`PondUITests` is the simulator proof. `testRecordOneEntry` enrols the key on a local test server, records one entry and waits until the server accepts it. `testInvite` sets the invite time to the next minute, picks the first choice in the notification, taps "✓ Done" in the Home Screen widget and waits for the entry on `/log/`. Before `testInvite`, add the medium Waldenlog widget to the Home Screen and to the Lock Screen by hand. The test cannot open a notification in the list for its buttons, so it taps "✓ Done" in the widget.
 Run it against the built server programs:
 
 ```

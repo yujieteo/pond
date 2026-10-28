@@ -9,17 +9,22 @@
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* PondKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000002 /* PondKit */; };
 		A10000000000000000000003 /* media-plan.md in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* media-plan.md */; };
+		A10000000000000000000037 /* PondKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000039 /* PondKit */; };
+		A1000000000000000000003C /* PondWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000032 /* PondWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000004 /* media-plan.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = "media-plan.md"; path = "../PondKit/Tests/PondKitTests/Fixtures/media-plan.md"; sourceTree = SOURCE_ROOT; };
 		A10000000000000000000005 /* Waldenlog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Waldenlog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000020 /* PondUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PondUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000032 /* PondWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PondWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000006 /* Pond */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Pond; sourceTree = "<group>"; };
 		A10000000000000000000021 /* PondUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = PondUITests; sourceTree = "<group>"; };
+		A10000000000000000000030 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
+		A10000000000000000000031 /* PondWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; path = PondWidget; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -38,7 +43,29 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000035 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000037 /* PondKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A1000000000000000000003B /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1000000000000000000003C /* PondWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXContainerItemProxy section */
 		A10000000000000000000023 /* PBXContainerItemProxy */ = {
@@ -48,6 +75,13 @@
 			remoteGlobalIDString = A1000000000000000000000A;
 			remoteInfo = Pond;
 		};
+		A1000000000000000000003E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000000000000000000000E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000033;
+			remoteInfo = PondWidget;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXGroup section */
@@ -55,6 +89,8 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000006 /* Pond */,
+				A10000000000000000000030 /* Shared */,
+				A10000000000000000000031 /* PondWidget */,
 				A10000000000000000000021 /* PondUITests */,
 				A10000000000000000000004 /* media-plan.md */,
 				A10000000000000000000009 /* Products */,
@@ -66,6 +102,7 @@
 			children = (
 				A10000000000000000000005 /* Waldenlog.app */,
 				A10000000000000000000020 /* PondUITests.xctest */,
+				A10000000000000000000032 /* PondWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -80,13 +117,16 @@
 				A1000000000000000000000C /* Sources */,
 				A10000000000000000000007 /* Frameworks */,
 				A1000000000000000000000D /* Resources */,
+				A1000000000000000000003B /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A1000000000000000000003D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A10000000000000000000006 /* Pond */,
+				A10000000000000000000030 /* Shared */,
 			);
 			name = Pond;
 			packageProductDependencies = (
@@ -115,6 +155,30 @@
 			productName = PondUITests;
 			productReference = A10000000000000000000020 /* PondUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		A10000000000000000000033 /* PondWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000041 /* Build configuration list for PBXNativeTarget "PondWidget" */;
+			buildPhases = (
+				A10000000000000000000034 /* Sources */,
+				A10000000000000000000035 /* Frameworks */,
+				A10000000000000000000038 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000031 /* PondWidget */,
+				A10000000000000000000030 /* Shared */,
+			);
+			name = PondWidget;
+			packageProductDependencies = (
+				A10000000000000000000039 /* PondKit */,
+			);
+			productName = PondWidget;
+			productReference = A10000000000000000000032 /* PondWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -145,6 +209,7 @@
 			targets = (
 				A1000000000000000000000A /* Pond */,
 				A10000000000000000000024 /* PondUITests */,
+				A10000000000000000000033 /* PondWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -155,6 +220,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000003 /* media-plan.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000038 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -175,6 +247,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000034 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -182,6 +261,11 @@
 			isa = PBXTargetDependency;
 			target = A1000000000000000000000A /* Pond */;
 			targetProxy = A10000000000000000000023 /* PBXContainerItemProxy */;
+		};
+		A1000000000000000000003D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000033 /* PondWidget */;
+			targetProxy = A1000000000000000000003E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -218,6 +302,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Pond.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3DVDQLT8CC;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -239,6 +324,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Pond.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3DVDQLT8CC;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -283,6 +369,56 @@
 			};
 			name = Release;
 		};
+		A1000000000000000000003F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = PondWidget.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3DVDQLT8CC;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "PondWidget-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Waldenlog;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = org.teoyujie.pond.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) WIDGET";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A10000000000000000000040 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = PondWidget.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3DVDQLT8CC;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "PondWidget-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Waldenlog;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = org.teoyujie.pond.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) WIDGET";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -313,6 +449,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A10000000000000000000041 /* Build configuration list for PBXNativeTarget "PondWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000003F /* Debug */,
+				A10000000000000000000040 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -324,6 +469,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		A10000000000000000000002 /* PondKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PondKit;
+		};
+		A10000000000000000000039 /* PondKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PondKit;
 		};
