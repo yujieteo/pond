@@ -5,11 +5,12 @@ pond_save on each node, and checks that the nodes converge to the same
 index hash within 60 s, with each acknowledged body at the highest rev of
 each entry (two bodies at the same rev are siblings on each node), after
 partitions, a node that sleeps (SIGSTOP), clock skew, kills with SIGKILL
-and 100 writers at the same time. It needs openssl, and the built
-server/pond_node and server/pond_save.
+and 100 writers at the same time. A phone saves to the server first, and
+to the desktop when the server is down (phase 4). It needs openssl, and
+the built server/pond_node and server/pond_save.
 
 Usage: python3 server/sync_test.py [kills]   (100 kills if not given)"""
-import json, os, random, shutil, signal, socket, subprocess, sys, tempfile, threading, time
+import http.server, json, os, random, shutil, signal, socket, subprocess, sys, tempfile, threading, time
 
 here = os.path.dirname(os.path.abspath(__file__))
 kills_wanted = int(sys.argv[1]) if len(sys.argv) > 1 else 100
@@ -186,24 +187,130 @@ model = {}
 model_lock = threading.Lock()
 
 
+def body_of(id, rev, title, key="d1"):
+    return json.dumps({"entry": {"date": "2026-10-28", "title": title}, "id": id, "key": key,
+                       "op": "put", "rev": rev, "v": 1}, sort_keys=True, separators=(",", ":")).encode()
+
+
+def accepted(id, rev, body, title):
+    """A node acknowledged body: the model keeps it."""
+    with model_lock:
+        if id not in model or rev > model[id][0]:
+            model[id] = (rev, {body: title})
+        elif rev == model[id][0]:
+            model[id][1][body] = title
+
+
+def pond_save(pond, body, signature):
+    """pond_save on the pond directory, as slowcgi runs it: the CGI reply."""
+    env = {"REQUEST_METHOD": "POST", "CONTENT_LENGTH": str(len(body)), "POND_DIR": pond, "HTTP_SIGNATURE": signature}
+    return subprocess.run([f"{here}/pond_save"], input=body, env=env, capture_output=True).stdout
+
+
 def save(node, id, rev, title, key="d1", times=None):
     """pond_save on node: the status code, and the rev of the server in a 409."""
-    body = json.dumps({"entry": {"date": "2026-10-28", "title": title}, "id": id, "key": key,
-                       "op": "put", "rev": rev, "v": 1}, sort_keys=True, separators=(",", ":")).encode()
-    env = {"REQUEST_METHOD": "POST", "CONTENT_LENGTH": str(len(body)), "POND_DIR": node.pond,
-           "HTTP_SIGNATURE": sign(f"{work}/{key}.pem", body)}
-    out = subprocess.run([f"{here}/pond_save"], input=body, env=env, capture_output=True).stdout.decode()
+    body = body_of(id, rev, title, key)
+    out = pond_save(node.pond, body, sign(f"{work}/{key}.pem", body)).decode()
     code = int(out.split()[1])
     if code == 201:
         if times is not None:
             for ext in ("json", "sig"):
                 os.utime(f"{node.pond}/entries/{id}.{ext}", (times, times))
-        with model_lock:
-            if key != "rogue" and (id not in model or rev > model[id][0]):
-                model[id] = (rev, {body: title})
-            elif key != "rogue" and rev == model[id][0]:
-                model[id][1][body] = title
+        if key != "rogue":
+            accepted(id, rev, body, title)
     return code, int(out.rsplit(" ", 1)[1]) if code == 409 else 0
+
+
+# Phase 4: the phone saves to the server, and to the desktop when the server
+# is down. The server takes the save with httpd and pond_save. The desktop
+# takes it with pond_node itself, over HTTP on its WireGuard address.
+
+def http_request(port, method, uri, body=b"", headers=None):
+    """An HTTP/1.1 request on 127.0.0.1: (status, body), or None if no reply."""
+    head = f"{method} {uri} HTTP/1.1\r\nHost: node\r\n"
+    for name, value in (headers if headers is not None else {"Content-Length": len(body)}).items():
+        head += f"{name}: {value}\r\n"
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=10) as s:
+            s.sendall(head.encode() + b"\r\n" + body)
+            reply = b""
+            while chunk := s.recv(1 << 16):
+                reply += chunk
+    except OSError:
+        return None
+    if not reply:
+        return None
+    first, _, rest = reply.partition(b"\r\n")
+    return int(first.split()[1]), rest.split(b"\r\n\r\n", 1)[1]
+
+
+class Front:
+    """httpd and slowcgi on the server: POST /pond/entry runs pond_save. stop
+    closes the port, as a server that is down."""
+
+    def __init__(self, node):
+        self.node, self.port, self.httpd = node, 0, None
+
+    def start(self):
+        node = self.node
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers["Content-Length"]))
+                out = pond_save(node.pond, body, self.headers.get("Signature", ""))
+                head, _, text = out.partition(b"\r\n\r\n")
+                self.send_response(int(head.split()[1]))
+                self.send_header("Content-Length", str(len(text)))
+                self.end_headers()
+                self.wfile.write(text)
+
+            def log_message(self, *args):
+                pass
+
+        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def stop(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
+class Phone:
+    """The outbox of the app (PondKit Outbox and Journal): each change waits
+    until a node acknowledges it. A send tries the server first, and the
+    desktop if the server gives no reply or a 5xx. After a 409, the change
+    gets the rev after the one in the reply."""
+
+    def __init__(self, server, desktop):
+        self.nodes = [server, desktop]
+        self.outbox = {}
+        self.acks = []
+
+    def record(self, id, rev, title):
+        self.outbox[id] = (rev, title)
+
+    def flush(self):
+        """Sends each waiting change once, as Outbox.send does: after a
+        node that is down, the next changes go to the next node first."""
+        start = 0
+        for id, (rev, title) in list(self.outbox.items()):
+            body = body_of(id, rev, title)
+            headers = {"Content-Length": len(body), "Signature": sign(f"{work}/d1.pem", body)}
+            for k in range(start, len(self.nodes)):
+                reply = http_request(self.nodes[k](), "POST", "/pond/entry", body, headers)
+                if reply is not None and reply[0] < 500:
+                    break
+                start = k + 1
+            if reply is None or reply[0] >= 500:
+                continue
+            status, text = reply
+            if status in (200, 201):
+                del self.outbox[id]
+                self.acks.append((id, rev, ["server", "desktop"][k]))
+                accepted(id, rev, body, title)
+            elif status == 409:
+                self.outbox[id] = (int(text.split()[-1]) + 1, title)
 
 
 def converge(nodes, limit=60):
@@ -271,6 +378,88 @@ class Watch:
         return self.back
 
 
+def phone_fallback(server, desktop, mac, front):
+    """Phase 4: the server down and the desktop up, both down, then the
+    server back. Each change waits on the phone until a node acknowledges
+    it, and the sync brings the saves of the desktop to the other nodes."""
+    # The save on the desktop has the replies of pond_save.
+    body = body_of("h1", 1, "over HTTP")
+    good = sign(f"{work}/d1.pem", body)
+
+    def code(*args, **kwargs):
+        reply = http_request(desktop.port, *args, **kwargs)
+        return reply and reply[0]
+
+    expect("the desktop refuses a save with no signature (403)", code("POST", "/pond/entry", body) == 403)
+    expect("the desktop refuses a save with a bad signature (403)",
+           code("POST", "/pond/entry", body, {"Content-Length": len(body), "Signature": sign(f"{work}/rogue.pem", body)}) == 403)
+    bad = body.replace(b'"title"', b'"fun":"loved it","title"')
+    expect("the desktop refuses a private field (400)",
+           code("POST", "/pond/entry", bad, {"Content-Length": len(bad), "Signature": sign(f"{work}/d1.pem", bad)}) == 400)
+    expect("the desktop refuses a save with no Content-Length (411)", code("POST", "/pond/entry", b"", {"Signature": good}) == 411)
+    big = b" " * 8193
+    expect("the desktop refuses a body over 8192 bytes (413)", code("POST", "/pond/entry", big, {"Content-Length": len(big)}) == 413)
+    expect("the desktop refuses a GET of /pond/entry (405)", code("GET", "/pond/entry", headers={}) == 405)
+    expect("the desktop sends no reply to an HTTP read", http_request(desktop.port, "GET", "/log/", headers={}) is None)
+    expect("the desktop takes no save over FastCGI (405)",
+           fcgi(desktop.port, "POST", "/pond/entry", body, good).startswith(b"Status: 405"))
+    headers = {"Content-Length": len(body), "Signature": good}
+    expect("the desktop saves a good body (201)", code("POST", "/pond/entry", body, headers) == 201)
+    accepted("h1", 1, body, "over HTTP")
+    expect("the desktop takes the same body again (200)", code("POST", "/pond/entry", body, headers) == 200)
+    other = body_of("h1", 1, "other")
+    reply = http_request(desktop.port, "POST", "/pond/entry", other, {"Content-Length": len(other), "Signature": sign(f"{work}/d1.pem", other)})
+    expect("the desktop refuses another body at the same rev, and names its rev (409)", reply == (409, b"the server has rev 1\n"))
+    expect("the desktop logs the save", "saved h1 rev 1" in desktop.log())
+    t = converge([server, desktop, mac])
+    expect(f"a save on the desktop comes to the server and the Mac ({t and round(t, 1)} s)", t is not None and matches_model([server, mac]))
+
+    phone = Phone(lambda: front.port, lambda: desktop.port)
+    phone.record("f0", 1, "with the server up")
+    phone.flush()
+    expect("the phone saves to the server first", phone.acks == [("f0", 1, "server")] and not phone.outbox)
+
+    # The server is down: its daemon and its httpd. The phone saves to the desktop.
+    server.kill()
+    front.stop()
+    for k in range(5):
+        phone.record(f"f{k + 1}", 1, f"server down {k}")
+    phone.record("f0", 2, "edited with the server down")
+    # A phone with an older journal: the desktop has h1 rev 1, so a 409 gives rev 2.
+    phone.record("h1", 1, "from an older journal")
+    phone.flush()
+    phone.flush()
+    expect("with the server down, the desktop acknowledges each change, and the outbox is empty",
+           not phone.outbox and all(node == "desktop" for _, _, node in phone.acks[1:]) and len(phone.acks) == 8)
+    expect("after a 409 from the desktop, the phone saves the rev after it",
+           ("h1", 2, "desktop") in phone.acks)
+    t = converge([desktop, mac])
+    expect(f"with the server down, the saves on the desktop come to the Mac ({t and round(t, 1)} s)",
+           t is not None and matches_model([desktop, mac]))
+
+    # Both are down: each change stays in the outbox.
+    desktop.kill()
+    for k in range(3):
+        phone.record(f"g{k}", 1, f"both down {k}")
+    phone.flush()
+    expect("with the server and the desktop down, the outbox keeps each change", sorted(phone.outbox) == ["g0", "g1", "g2"])
+
+    # The server is back, and the desktop stays down: the phone saves to the
+    # server, and the server pulls the saves of the desktop from the Mac.
+    front.start()
+    server.restart()
+    phone.flush()
+    expect("with the server back, the phone saves the waiting changes to the server",
+           not phone.outbox and [a for a in phone.acks if a[0].startswith("g")] == [(f"g{k}", 1, "server") for k in range(3)])
+    t = converge([server, mac])
+    expect(f"with the server back, the saves on the desktop come to the server through the Mac ({t and round(t, 1)} s)",
+           t is not None and matches_model([server, mac]))
+    desktop.restart()
+    t = converge([server, desktop, mac])
+    expect(f"with the desktop back, the 3 nodes converge with each acknowledged save ({t and round(t, 1)} s)",
+           t is not None and matches_model([server, desktop, mac]))
+
+
 def main():
     nodes = {name: Node(name) for name in names}
     for key in ("d1", "d2", "d3", "rogue"):
@@ -289,6 +478,8 @@ def main():
     server, desktop, mac = (nodes[n] for n in names)
     all3 = list(nodes.values())
     results = []
+    front = Front(server)
+    front.start()
 
     for k in range(20):
         save(server, f"e{k}", 1, f"entry {k}")
@@ -305,6 +496,8 @@ def main():
     expect("a sync request signed by the node key gets the index",
            fcgi(desktop.port, "POST", "/pond/sync", body, sign(server.key, body)).startswith(b"Status: 200"))
     expect("a GET of /pond/sync gets 405", fcgi(desktop.port, "GET", "/pond/sync").startswith(b"Status: 405"))
+
+    phone_fallback(server, desktop, mac, front)
 
     # A body signed by a key that only the server has: the other nodes refuse it.
     save(server, "forged", 1, "forged", key="rogue")

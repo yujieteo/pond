@@ -33,6 +33,37 @@ final class ProofTests: XCTestCase {
         save("entry", in: shots)
     }
 
+    /// Phase 4 of docs/store.md: with the server down, the phone saves to the desktop. TEST_RUNNER_POND_DESKTOP is
+    /// a pond_node, `http://<numeric address>:<port>`, and TEST_RUNNER_POND_KEYS is its keys/ directory.
+    func testFallbackToTheDesktop() throws {
+        let desktop = try XCTUnwrap(env["POND_DESKTOP"], "set TEST_RUNNER_POND_DESKTOP")
+        // Port 1 on this machine has no server: the send gets no reply.
+        let app = try launchAndEnrol(["-server", "http://127.0.0.1:1", "-fallback", "YES"])
+        app.buttons["Show key"].tap()
+        let field = app.textFields["desktop"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        // A tap at the right end puts the cursor after the text, so that the deletes clear all of it.
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        // The field keeps the address of the run before.
+        let old = (field.value as? String) ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count) + desktop + "\n")
+        // Return closes the keyboard: with the keyboard open, a swipe down only closes the keyboard.
+        app.swipeDown(velocity: .fast)
+        // A tap while the sheet still closes does not come to Today.
+        wait(for: [expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: field)], timeout: 5)
+
+        let choice = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Today' AND label CONTAINS 'slot'")).firstMatch
+        XCTAssertTrue(choice.waitForExistence(timeout: 5))
+        choice.tap()
+        app.buttons["Done"].firstMatch.tap()
+
+        // The row shows "waiting" until a node accepts the entry: here the desktop.
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS 'at home'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        let sent = NSPredicate(format: "NOT (label CONTAINS 'waiting')")
+        wait(for: [expectation(for: sent, evaluatedWith: row)], timeout: 30)
+    }
+
     /// Step 7: the invite notification at the invite time, a pick in it, the widgets with the pick, and "Done" in the
     /// Home Screen widget. The entry must then be on the server's /log/. Add the Home Screen widget (medium) and the
     /// Lock Screen widget of Waldenlog by hand before the run, for their screenshots.
@@ -109,11 +140,11 @@ final class ProofTests: XCTestCase {
     }
 
     /// Launches the app and enrols its key: the key file goes in the server's keys/, as the captain does by hand.
-    private func launchAndEnrol() throws -> XCUIApplication {
+    private func launchAndEnrol(_ arguments: [String]? = nil) throws -> XCUIApplication {
         let keys = try XCTUnwrap(env["POND_KEYS"], "set TEST_RUNNER_POND_KEYS")
         unlock()
         let app = XCUIApplication()
-        app.launchArguments = ["-server", server]
+        app.launchArguments = arguments ?? ["-server", server]
         app.launch()
         let allow = springboard.alerts.buttons["Allow"]
         if allow.waitForExistence(timeout: 3) { allow.tap() }

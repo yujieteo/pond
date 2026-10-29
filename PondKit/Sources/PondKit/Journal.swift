@@ -5,14 +5,14 @@ public enum Fun: String, Codable, CaseIterable, Sendable {
     case little = "a little", good, loved = "loved it"
 }
 
-/// One entry as the phone keeps it: the public entry, the private fields, and what the server has.
+/// One entry as the phone keeps it: the public entry, the private fields, and what the nodes have.
 public struct Record: Codable, Equatable, Identifiable, Sendable {
     public var id: String
     /// The newest revision on the phone.
     public var rev: Int
-    /// The newest revision that the server accepted; 0 if none.
+    /// The newest revision that a node (the server or the desktop) accepted; 0 if none.
     public var sentRev = 0
-    /// The phone sent a change of this record at least once, so the server can have it, also without a reply.
+    /// The phone sent a change of this record at least once, so a node can have it, also without a reply.
     public var tried = false
     /// The server refused `rev` with 400 or 413. A new edit sends again.
     public var refused = false
@@ -43,13 +43,13 @@ extension Record {
     }
 }
 
-/// What the server's reply means to the outbox (docs/protocol.md, The replies).
+/// What the reply of a node means to the outbox (docs/protocol.md, The replies). The desktop gives the replies of the server.
 public enum Reply: Equatable, Sendable {
-    /// 201, or 200 for a retry: the server has this revision.
+    /// 201, or 200 for a retry: the node has this revision.
     case accepted
-    /// 409: the server has the revision `saved`, which is not lower.
+    /// 409: the node has the revision `saved`, which is not lower.
     case conflict(saved: Int)
-    /// 400 or 413: the server never accepts this body.
+    /// 400 or 413: no node ever accepts this body.
     case refused
     /// No reply, or a reply that can change later (403 until the key is enrolled, 5xx): send again later.
     case later
@@ -69,7 +69,7 @@ public enum Reply: Equatable, Sendable {
     }
 }
 
-/// The entries on the phone. The outbox is the set of records with a revision that the server does not have yet.
+/// The entries on the phone. The outbox is the set of records with a revision that no node has acknowledged yet.
 public struct Journal: Codable, Equatable, Sendable {
     public var records: [Record] = []
 
@@ -135,8 +135,8 @@ public struct Journal: Codable, Equatable, Sendable {
         }
     }
 
-    /// The server's reply to `change`. Returns true if the record waits for a send at once: after a 409,
-    /// the phone's change gets the revision after the server's, because the phone has the newest change.
+    /// The reply of a node to `change`. Returns true if the record waits for a send at once: after a 409,
+    /// the phone's change gets the revision after the node's, because the phone has the newest change.
     @discardableResult
     public mutating func apply(_ reply: Reply, to change: Change) -> Bool {
         guard let index = records.firstIndex(where: { $0.id == change.id }) else { return false }
@@ -167,15 +167,32 @@ public struct Journal: Codable, Equatable, Sendable {
 public enum Outbox {
     public typealias Transport = @Sendable (URLRequest) async throws -> (status: Int, body: Data)
 
-    /// Sends each signed change once, and returns the replies in the same sequence.
-    public static func send(_ changes: [SignedChange], server: URL, transport: Transport) async -> [Reply] {
+    /// The nodes that take a save, in the order of the tries: the server, then the desktop if `fallback` is on and
+    /// `desktop` is an http or https URL. The fallback stays off until phase 5 of docs/store.md: in shadow mode, the site
+    /// does not show a save that only the desktop took.
+    public static func nodes(server: URL, desktop: String, fallback: Bool) -> [URL] {
+        guard fallback, let url = URL(string: desktop.trimmingCharacters(in: .whitespaces)), ["http", "https"].contains(url.scheme),
+              url.host() != nil
+        else { return [server] }
+        return [server, url]
+    }
+
+    /// Sends each signed change once, to the first node of `nodes` that is up: the server, then the desktop over the VPN.
+    /// A node is down if it gives no reply or a 5xx. After a node is down, the next changes start at the node after it,
+    /// so that each change does not wait for a node that is down again. Returns the replies in the same sequence.
+    public static func send(_ changes: [SignedChange], nodes: [URL], transport: Transport) async -> [Reply] {
         var replies: [Reply] = []
+        var first = 0
         for change in changes {
-            if let (status, body) = try? await transport(change.request(server: server)) {
-                replies.append(Reply(status: status, body: String(decoding: body, as: UTF8.self)))
-            } else {
-                replies.append(.later)
+            var reply = Reply.later
+            while first < nodes.count {
+                if let (status, body) = try? await transport(change.request(server: nodes[first])), status < 500 {
+                    reply = Reply(status: status, body: String(decoding: body, as: UTF8.self))
+                    break
+                }
+                first += 1
             }
+            replies.append(reply)
         }
         return replies
     }

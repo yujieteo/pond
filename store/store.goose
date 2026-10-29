@@ -425,6 +425,10 @@ fn status_text(s: Status) -> const u8[:] {
 // A store with damage at the end refuses all appends with Failed.
 fn append(body: u8[:]) -> Status, i64 { return save(body, "", false); }
 
+// append with sig, the base64 phone signature of body, in the record: a
+// save from the phone on this node, whose body the peers check again.
+fn append_signed(body: u8[:], sig: u8[:]) -> Status, i64 { return save(body, sig, false); }
+
 // Saves body with sig, the base64 phone signature of body, in the record,
 // with the rule of a merge: a body that a node acknowledged. The higher rev
 // wins; a body that the store has at the top rev changes nothing; a

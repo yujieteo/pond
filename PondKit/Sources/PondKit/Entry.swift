@@ -92,6 +92,8 @@ public struct SignedChange: Sendable {
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(signature, forHTTPHeaderField: "Signature")
+        // A server that is down must not hold the send for the default 60 s before the phone tries the desktop.
+        request.timeoutInterval = 10
         return request
     }
 }

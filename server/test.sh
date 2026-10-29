@@ -192,7 +192,7 @@ expect "pond_node reads the entry files and serves the same bytes as pond_read" 
 expect "pond_node imports each entry once" 2 "$(grep -c '^pond_node: took' "$work/node.log")"
 expect "pond_node does not find an unknown path" 404 "$(code /other)"
 expect "pond_node refuses a POST" 405 "$(code /log/ POST)"
-expect "pond_node sends no reply to a request that is not FastCGI" "" "$("$here/pond_shadow" get http "$port" /log/ 2> /dev/null || true)"
+expect "pond_node sends no reply to an HTTP read" "" "$("$here/pond_shadow" get http "$port" /log/ 2> /dev/null || true)"
 
 # Three saves in the same second, 20 ms apart (2 ticks of the clock of
 # OpenBSD), made in an order that is not the order of their names:

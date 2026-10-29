@@ -7,18 +7,21 @@
 // Phase 3 is the sync: each node pulls the revisions that it does not have
 // from its peers (POST /pond/sync), and GET /pond/node gives the number of
 // entries and the index hash.
+// Phase 4 is the save of the phone on the desktop when the server is down:
+// POST /pond/entry, with the rules of pond_save, into the store.
 //
 //   pond_node --pond <dir> --store <dir> --template <file> --port <n> [--wireguard <address>]
 //             [--node <name> --node-key <file> --peer <address>:<port> ...]
 //
 // It listens on 127.0.0.1 and on the WireGuard address, and on no other
-// address. A connection speaks FastCGI, from httpd or from a peer. The
-// daemon closes a connection that does not.
+// address. A connection speaks FastCGI, from httpd or from a peer, or
+// HTTP/1.1 for POST /pond/entry, from the phone over WireGuard. The daemon
+// closes a connection that does neither.
 //
 // The threads: main accepts the connections and puts each on the queue for
 // Conn; the readers take them, each with the store open on its own; one
 // writer reads the entry files into the store once each second, and takes
-// the bodies that the syncer pulled from the peers.
+// the bodies that the syncer pulled from the peers and that the phone saved.
 
 import std;
 import os;
@@ -27,6 +30,7 @@ import base64;
 import dictionary;
 import store from "../store";
 import render;
+import request;
 
 // pond_net.h: the sockets.
 extern fn pond_no_sigpipe();
@@ -66,6 +70,7 @@ let BATCH = 100;
 // about 2 MB.
 let MAX_REPLY = 16 << 20;
 let MAX_REQUEST = 65536;
+let MAX_BODY = 8192;
 // A full queue turns a connection away, so that a flood cannot use all the memory.
 let MAX_WAITING = 1024;
 
@@ -155,10 +160,36 @@ fn scan(c: Config&, seen: dictionary<u8[..80], Seen>&) {
     }
 }
 
-// A body that the syncer pulled from a peer, with a good phone signature.
-// end marks the end of a batch: the writer then sends Merged.
-struct Pulled { sig: u8[..255], body: u8[..8192], end: bool }
+// A body with a good phone signature for the writer: pulled by the syncer
+// from a peer (fd -1), or saved by the phone on the connection fd, which the
+// writer replies to (id and http as in Request). end marks the end of a
+// batch of the syncer: the writer then sends Merged.
+struct Work { sig: u8[..255], body: u8[..8192], end: bool, fd: i32, id: i64, http: bool }
 struct Merged { took: i64 }
+
+// A save of the phone, with the rule of docs/protocol.md, as pond_save has
+// it on the server: the higher rev wins, the same body again is a retry,
+// and a 409 names the saved rev.
+fn save(w: Work&) {
+    let status, rev = store::append_signed(w.body, w.sig);
+    var cgi: u8[>..] = [];
+    match status {
+        Created => {
+            var scratch: u8[>..] = [];
+            let m, ok = store::meta(w.body, scratch);
+            log(str("saved ", m.id, " rev ", m.rev));
+            render::format_reply(cgi, "201 Created", "text/plain", "saved\n");
+        },
+        Same => render::format_reply(cgi, "200 OK", "text/plain", "saved before\n"),
+        Conflict => render::format_reply(cgi, "409 Conflict", "text/plain", str("the server has rev ", rev, "\n")),
+        Invalid => render::format_reply(cgi, "400 Bad Request", "text/plain", "not a valid body\n"),
+        Failed => {
+            log("cannot save a body of the phone in the store");
+            render::format_reply(cgi, "500 Internal Server Error", "text/plain", "cannot save the entry\n");
+        },
+    }
+    send_reply(w.fd, w.id, w.http, cgi);
+}
 
 thread_fn writer(c: Config) {
     guard store::open(c.store, true) else { die("the writer cannot open the store"); }
@@ -166,16 +197,20 @@ thread_fn writer(c: Config) {
     var took = 0;
     loop {
         scan(c, seen);
-        // Between two scans, the writer takes the pulled bodies.
+        // Between two scans, the writer takes the pulled and saved bodies.
         let until = clock_ns() + SCAN_MS * 1000000;
         loop {
             let left = (until - clock_ns()) / 1000000;
             guard left > 0 else { break; }
-            let p, ok = qget<Pulled>(left);
+            let p, ok = qget<Work>(left);
             guard ok else { break; }
             if p.end {
                 qput(Merged { took: took });
                 took = 0;
+                continue;
+            }
+            if p.fd >= 0 {
+                save(p);
                 continue;
             }
             let status, rev = store::merge(p.body, p.sig);
@@ -382,7 +417,7 @@ fn pull(c: Config&, p: Peer&, refused: dictionary<u8[..96], bool>&) -> i64 {
         guard call(c, p, ask, records) else { return -1; }
         let whole = store::each_in(records) { sig, body =>
             if signed(c, body, sig) {
-                var q = Pulled { sig: [], body: [], end: false };
+                var q = Work { sig: [], body: [], end: false, fd: -1, id: 0, http: false };
                 q.sig.append(sig);
                 q.body.append(body);
                 qput(q);
@@ -398,7 +433,7 @@ fn pull(c: Config&, p: Peer&, refused: dictionary<u8[..96], bool>&) -> i64 {
             }
         };
         if !whole { log(str("refused the records from ", p.host, ":", p.port, ": not whole records")); }
-        qput(Pulled { sig: [], body: [], end: true });
+        qput(Work { sig: [], body: [], end: true, fd: -1, id: 0, http: false });
         let merged, ok = qget<Merged>(60000);
         guard ok else { return took; }
         took += merged.took;
@@ -425,7 +460,9 @@ thread_fn syncer(c: Config) {
 
 // The readers: one request on each connection.
 
-struct Request { id: i64, method: u8[..16], uri: u8[..4096], sig: u8[..512], body: u8[>..] }
+// http is true for HTTP/1.1, false for FastCGI. length is the HTTP
+// Content-Length, or -1 if the request has none.
+struct Request { id: i64, http: bool, method: u8[..16], uri: u8[..4096], sig: u8[..512], length: i64, body: u8[>..] }
 
 fn be16(s: u8[:], at: i64) -> i64 { ((s[at] as i64) << 8) | s[at + 1] }
 
@@ -479,15 +516,50 @@ fn fcgi_parse(buf: u8[:], r: Request&) -> i64 {
     return 1;
 }
 
+// The HTTP/1.1 request in buf, from the phone: the request line, the
+// headers and Content-Length bytes of body. A body over MAX_BODY is not
+// read, because the save refuses it with 413. 0 if buf has only a part of
+// it, -1 if it is not valid, else 1.
+fn http_parse(buf: u8[:], r: Request&) -> i64 {
+    let end = find(buf, "\r\n\r\n");
+    guard end >= 0 else { return 0; }
+    let lines = split(buf[..end], "\r\n");
+    let first = split(lines[0], ' ');
+    guard first.len == 3 && first[0].len <= 16 && first[1].len <= 4096 && starts_with(first[2], "HTTP/1.") else { return -1; }
+    r.http = true;
+    r.method.append(first[0]);
+    r.uri.append(first[1]);
+    for line in lines[1..] {
+        let colon = find(line, ":");
+        guard colon > 0 else { return -1; }
+        var name: u8[>..] = [];
+        name.append(line[..colon]);
+        to_lower(name);
+        let value = trim(line[colon + 1..]);
+        if name == "signature" && value.len <= 512 { r.sig.append(value); }
+        else if name == "content-length" {
+            let n, ok = parse_int(value);
+            guard ok && n >= 0 else { return -1; }
+            r.length = n;
+        }
+    }
+    guard r.length >= 0 && r.length <= MAX_BODY else { return 1; }
+    guard buf.len >= end + 4 + r.length else { return 0; }
+    r.body.append(buf[end + 4..end + 4 + r.length]);
+    return 1;
+}
+
 fn read_request(fd: i32, r: Request&) -> bool {
     var buf: u8[>..] = [];
     loop {
         guard pond_recv(fd, MAX_REQUEST - buf.len, buf) > 0 else { return false; }
+        r.http = false;
         r.method.clear();
         r.uri.clear();
         r.sig.clear();
+        r.length = -1;
         r.body.clear();
-        let got = fcgi_parse(buf, r);
+        let got = if buf[0] == 1 { fcgi_parse(buf, r) } else { http_parse(buf, r) };
         if got != 0 { return got > 0; }
         guard buf.len < MAX_REQUEST else { return false; }
     }
@@ -516,6 +588,47 @@ fn fcgi_reply(out: u8[>..]&, id: i64, cgi: u8[:]) {
     }
     put_record(out, 6, id, "");
     put_record(out, 3, id, [0, 0, 0, 0, 0, 0, 0, 0]);
+}
+
+// The CGI reply cgi as HTTP/1.1: the Status line becomes the status line.
+// The connection closes after the reply.
+fn http_reply(out: u8[>..]&, cgi: u8[:]) {
+    let end = find(cgi, "\r\n\r\n");
+    let head = cgi[..end];
+    let first = find(head, "\r\n");
+    let body = cgi[end + 4..];
+    format(out, "HTTP/1.1 ", head["Status: ".len..first], "\r\n", head[first + 2..],
+           "\r\nContent-Length: ", body.len, "\r\nConnection: close\r\n\r\n", body);
+}
+
+// Sends the CGI reply cgi on fd as the request had it, and closes fd.
+fn send_reply(fd: i32, id: i64, http: bool, cgi: u8[:]) {
+    var out: u8[>..] = [];
+    if http { http_reply(out, cgi); } else { fcgi_reply(out, id, cgi); }
+    pond_send(fd, out);
+    pond_close(fd);
+}
+
+// A save of the phone, POST /pond/entry over HTTP: the checks of pond_save,
+// with its replies. A good save goes to the writer, which replies on fd: true. Else
+// false, with the reply in out.
+fn take_save(c: Config&, fd: i32, r: Request&, out: u8[>..]&) -> bool {
+    guard r.method == "POST" else { render::format_reply(out, "405 Method Not Allowed", "text/plain", "use POST\n"); return false; }
+    guard r.length >= 0 else { render::format_reply(out, "411 Length Required", "text/plain", "no Content-Length\n"); return false; }
+    guard r.length <= MAX_BODY else { render::format_reply(out, "413 Content Too Large", "text/plain", "the body is over 8192 bytes\n"); return false; }
+    guard r.body.len == r.length else { render::format_reply(out, "400 Bad Request", "text/plain", "the body is not Content-Length bytes\n"); return false; }
+    let why = request::problem(r.body);
+    guard why.len == 0 else { render::format_reply(out, "400 Bad Request", "text/plain", str(why, "\n")); return false; }
+    let sig = trim(r.sig);
+    guard sig.len <= 255 && signed(c, r.body, sig) else {
+        render::format_reply(out, "403 Forbidden", "text/plain", "no valid signature from an enrolled key\n");
+        return false;
+    }
+    var w = Work { sig: [], body: [], end: false, fd: fd, id: r.id, http: r.http };
+    w.sig.append(sig);
+    w.body.append(r.body);
+    qput(w);
+    return true;
 }
 
 // The items of the store, newest first. update makes them, and the
@@ -555,10 +668,17 @@ fn update(v: View&, conflicts: u8[>..]&) {
 }
 
 fn serve(c: Config&, fd: i32, v: View&, conflicts: u8[>..]&) {
-    var r = Request { id: 0, method: [], uri: [], sig: [], body: [] };
+    var r = Request { id: 0, http: false, method: [], uri: [], sig: [], length: -1, body: [] };
     guard read_request(fd, r) else { pond_close(fd); return; }
-    update(v, conflicts);
+    // The phone speaks HTTP only to save. httpd sends the reads as FastCGI.
+    guard !r.http || r.uri == "/pond/entry" else { pond_close(fd); return; }
     var cgi: u8[>..] = [];
+    if r.http {
+        guard !take_save(c, fd, r, cgi) else { return; }
+        send_reply(fd, r.id, r.http, cgi);
+        return;
+    }
+    update(v, conflicts);
     if r.uri == "/pond/sync" {
         sync_reply(c, r, cgi);
     } else if r.uri == "/pond/node" && r.method == "GET" {
@@ -569,10 +689,7 @@ fn serve(c: Config&, fd: i32, v: View&, conflicts: u8[>..]&) {
         for it in v.items { order.push(it); }
         render::reply(cgi, r.method, r.uri, c.template, order, conflicts);
     }
-    var out: u8[>..] = [];
-    fcgi_reply(out, r.id, cgi);
-    pond_send(fd, out);
-    pond_close(fd);
+    send_reply(fd, r.id, false, cgi);
 }
 
 thread_fn reader(c: Config) {

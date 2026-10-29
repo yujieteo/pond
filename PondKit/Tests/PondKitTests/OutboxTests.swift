@@ -159,6 +159,105 @@ private let now = Date(timeIntervalSince1970: 1_793_000_000)
     #expect(Menu.choices(plan: plan, journal: journal, date: after, calendar: calendar).count == 3)
 }
 
+// The fallback: the server first, and the desktop over the VPN when the server is down (docs/store.md, phase 4).
+
+private let server = URL(string: "https://teoyujie.org")!
+private let desktop = URL(string: "http://10.0.0.2:8788")!
+
+/// A transport that gives each node's reply from `replies` (nil: no reply), and keeps the host of each request.
+private actor Nodes {
+    var asked: [String] = []
+    let replies: [String: (Int, String)?]
+
+    init(_ replies: [String: (Int, String)?]) { self.replies = replies }
+
+    func reply(_ request: URLRequest) throws -> (status: Int, body: Data) {
+        let host = request.url!.host()!
+        asked.append(host)
+        guard let reply = replies[host] ?? nil else { throw URLError(.cannotConnectToHost) }
+        return (reply.0, Data(reply.1.utf8))
+    }
+
+    var transport: Outbox.Transport { { request in try await self.reply(request) } }
+}
+
+private func signed(_ count: Int) throws -> [SignedChange] {
+    var journal = Journal()
+    for k in 0..<count { journal.record(Entry(date: "2026-10-28", title: "entry \(k)")) }
+    let key = P256.Signing.PrivateKey()
+    return try journal.outbox(now: now, key: "phone").map { try SignedChange($0, signer: key) }
+}
+
+@Test func theServerComesFirst() async throws {
+    let nodes = Nodes(["teoyujie.org": (201, "saved\n"), "10.0.0.2": (201, "saved\n")])
+    let replies = await Outbox.send(try signed(2), nodes: [server, desktop], transport: nodes.transport)
+    #expect(replies == [.accepted, .accepted])
+    #expect(await nodes.asked == ["teoyujie.org", "teoyujie.org"])
+}
+
+@Test func theDesktopTakesTheChangesWhenTheServerGivesNoReply() async throws {
+    let nodes = Nodes(["teoyujie.org": nil, "10.0.0.2": (201, "saved\n")])
+    let replies = await Outbox.send(try signed(3), nodes: [server, desktop], transport: nodes.transport)
+    #expect(replies == [.accepted, .accepted, .accepted])
+    #expect(await nodes.asked == ["teoyujie.org", "10.0.0.2", "10.0.0.2", "10.0.0.2"], "after the server is down, the next changes go to the desktop first")
+}
+
+@Test func theDesktopTakesTheChangeWhenTheServerGivesA5xx() async throws {
+    for status in [500, 502, 503, 504] {
+        let nodes = Nodes(["teoyujie.org": (status, ""), "10.0.0.2": (409, "the server has rev 3\n")])
+        let replies = await Outbox.send(try signed(1), nodes: [server, desktop], transport: nodes.transport)
+        #expect(replies == [.conflict(saved: 3)], "a 409 from the desktop names its rev")
+        #expect(await nodes.asked == ["teoyujie.org", "10.0.0.2"])
+    }
+}
+
+@Test func aServerThatRepliesKeepsTheChange() async throws {
+    let cases: [(Int, String, Reply)] = [(200, "saved before\n", .accepted), (409, "the server has rev 2\n", .conflict(saved: 2)),
+                                         (400, "", .refused), (413, "", .refused), (403, "", .later)]
+    for (status, body, want) in cases {
+        let nodes = Nodes(["teoyujie.org": (status, body), "10.0.0.2": (201, "saved\n")])
+        let replies = await Outbox.send(try signed(1), nodes: [server, desktop], transport: nodes.transport)
+        #expect(replies == [want])
+        #expect(await nodes.asked == ["teoyujie.org"], "a \(status) from the server does not go to the desktop")
+    }
+}
+
+@Test func withBothNodesDownEachChangeWaits() async throws {
+    let nodes = Nodes(["teoyujie.org": nil, "10.0.0.2": (503, "")])
+    let replies = await Outbox.send(try signed(3), nodes: [server, desktop], transport: nodes.transport)
+    #expect(replies == [.later, .later, .later])
+    #expect(await nodes.asked == ["teoyujie.org", "10.0.0.2"], "after both are down, the next changes wait with no request")
+
+    var journal = Journal()
+    let id = journal.record(paper)
+    let change = journal.outbox(now: now, key: "phone")[0]
+    journal.apply(replies[0], to: change)
+    #expect(journal[id]?.waiting == true, "the change stays in the outbox until a node acknowledges it")
+}
+
+@Test func withTheFallbackOffOnlyTheServerIsAsked() async throws {
+    let off = Outbox.nodes(server: server, desktop: desktop.absoluteString, fallback: false)
+    #expect(off == [server])
+    let nodes = Nodes(["teoyujie.org": nil, "10.0.0.2": (201, "saved\n")])
+    let replies = await Outbox.send(try signed(2), nodes: off, transport: nodes.transport)
+    #expect(replies == [.later, .later], "each change stays in the outbox while the server is down")
+    #expect(await nodes.asked == ["teoyujie.org"], "no change goes to the desktop")
+}
+
+@Test func withTheFallbackOnTheDesktopComesAfterTheServer() {
+    #expect(Outbox.nodes(server: server, desktop: " \(desktop.absoluteString) ", fallback: true) == [server, desktop])
+    for bad in ["", "10.0.0.2:8788", "ftp://10.0.0.2", "http://"] {
+        #expect(Outbox.nodes(server: server, desktop: bad, fallback: true) == [server], "\(bad) is not a desktop")
+    }
+}
+
+@Test func withNoDesktopOnlyTheServerIsAsked() async throws {
+    let nodes = Nodes(["teoyujie.org": nil])
+    let replies = await Outbox.send(try signed(2), nodes: [server], transport: nodes.transport)
+    #expect(replies == [.later, .later])
+    #expect(await nodes.asked == ["teoyujie.org"])
+}
+
 #if os(macOS)
 /// The outbox against the built server/pond_save: 201, a retry (200), 409, 403 and a removal.
 @Test func outboxAgainstTheServer() async throws {
@@ -191,7 +290,7 @@ private let now = Date(timeIntervalSince1970: 1_793_000_000)
     func flush(_ journal: inout Journal, signer: Signer = key) async throws -> [Reply] {
         let changes = journal.outbox(now: now, key: "phone")
         let replies = await Outbox.send(try changes.map { try SignedChange($0, signer: signer) },
-                                        server: URL(string: "https://teoyujie.org")!, transport: server)
+                                        nodes: [URL(string: "https://teoyujie.org")!], transport: server)
         for (change, reply) in zip(changes, replies) { journal.apply(reply, to: change) }
         return replies
     }

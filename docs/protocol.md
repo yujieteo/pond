@@ -82,6 +82,7 @@ On OpenBSD, pond_read unveils `entries/` and the template read only, and pledges
 ## The programs
 
 The server is two CGI programs under httpd and slowcgi: pond_save for `POST /pond/entry`, and pond_read for the paths above. Reason: two programs let pond_read run with no write access.
+From phase 5, when the server is down, the phone sends the same request to the desktop, where `pond_node` takes it with the same checks and replies (`docs/store.md`, The phone fallback). `request.goose` has the checks of the body for both programs.
 Goose compiles each `.goose` file to standalone C on the Mac, and the C is in the repository beside it.
 The C needs only a C compiler, and libcrypto for pond_save, so it builds static on OpenBSD and runs in the chroot.
 `render.goose` makes the pages of the read side. pond_read and the daemon pond_node (`docs/store.md`) both use it, so they serve the same bytes.
