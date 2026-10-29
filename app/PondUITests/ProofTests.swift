@@ -42,11 +42,15 @@ final class ProofTests: XCTestCase {
         app.buttons["Show key"].tap()
         let field = app.textFields["desktop"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
+        // A tap at the right end puts the cursor after the text, so that the deletes clear all of it.
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
         // The field keeps the address of the run before.
         let old = (field.value as? String) ?? ""
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count) + desktop)
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count) + desktop + "\n")
+        // Return closes the keyboard: with the keyboard open, a swipe down only closes the keyboard.
         app.swipeDown(velocity: .fast)
+        // A tap while the sheet still closes does not come to Today.
+        wait(for: [expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: field)], timeout: 5)
 
         let choice = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Today' AND label CONTAINS 'slot'")).firstMatch
         XCTAssertTrue(choice.waitForExistence(timeout: 5))
