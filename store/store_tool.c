@@ -9780,7 +9780,7 @@ static store_Status_g5 store_save_g5_102(void *body_g_data, int64_t body_g_len, 
     }
     int64_t rev_g;
     t35.data = (uint8_t *)((payload_g.base)); t35.len = (payload_g.len);
-    t36 = store_locked_append_g5(t35.data, t35.len, gs_sub_i64((int64_t)(((payload_g.len))), (body_g.len), gs_file1, 451), m_g.id_g, m_g.rev_g, merging_g, &rev_g, gs_sp + 2);
+    t36 = store_locked_append_g5(t35.data, t35.len, gs_sub_i64((int64_t)(((payload_g.len))), (body_g.len), gs_file1, 455), m_g.id_g, m_g.rev_g, merging_g, &rev_g, gs_sp + 2);
     status_g = t36;
     int32_t t37 = GS_GL->store_lock_fd_g5;
     store_unlock(t37);
@@ -9795,7 +9795,7 @@ static store_Status_g5 store_save_g5_102(void *body_g_data, int64_t body_g_len, 
     GS(gs_sp + 1)->top = t41;
     GS(gs_sp + 1)->top = payload_g.base;
     GS(gs_sp + 0)->top = scratch_g.base;
-    GS_UNREACHABLE(gs_file1, 435);
+    GS_UNREACHABLE(gs_file1, 439);
     t40 = (store_Status_g5){0};
     return t40;
 }
@@ -11591,7 +11591,7 @@ static store_Status_g5 store_locked_append_g5(void *payload_g_data, int64_t payl
     int64_t t7 = payload_g.len;
     int64_t t8 = body_at_g;
     int64_t t9 = t7;
-    if (t8 < 0 || t9 < t8 || t9 > t7) gs_abort(GS_E_SLICE, gs_file1, 458);
+    if (t8 < 0 || t9 < t8 || t9 > t7) gs_abort(GS_E_SLICE, gs_file1, 462);
     body_g.data = t6 + t8; body_g.len = t9 - t8;
     int64_t * have_g;
     t10.hdr = (gs_rhdr *)&GS_GL->store_by_id_g5; t10.stk = (&GS_GL->gs_gstk_store_by_id_g5);
@@ -11600,7 +11600,7 @@ static store_Status_g5 store_locked_append_g5(void *payload_g_data, int64_t payl
     int64_t old_rev_g = 0;
     if (have_g) {
         int64_t t12 = (*have_g);
-        e_g = (*(store_Entry_g5 *)(((GS_GL->store_entries_g5.base) + GS_IDX((int64_t)(t12), (GS_GL->store_entries_g5.len), gs_file1, 462) * 146)));
+        e_g = (*(store_Entry_g5 *)(((GS_GL->store_entries_g5.base) + GS_IDX((int64_t)(t12), (GS_GL->store_entries_g5.len), gs_file1, 466) * 146)));
         old_rev_g = e_g.rev_g;
         if (!((uint8_t)((int64_t)((int64_t)(rev_g)) == (int64_t)(old_rev_g)))) goto L13;
         store_Entry_g5 * e_g_2 = &e_g;
@@ -11706,7 +11706,7 @@ static store_Status_g5 store_locked_append_g5(void *payload_g_data, int64_t payl
     int64_t t57 = (rec_g.len);
     int64_t t58 = 4;
     int64_t t59 = 8;
-    if (t58 < 0 || t59 < t58 || t59 > t57) gs_abort(GS_E_SLICE, gs_file1, 470);
+    if (t58 < 0 || t59 < t58 || t59 > t57) gs_abort(GS_E_SLICE, gs_file1, 474);
     len_bytes_g.data = (uint8_t *)(t56) + t58; len_bytes_g.len = t59 - t58;
     body_g_2 = payload_g;
     {
@@ -11805,7 +11805,7 @@ static store_Status_g5 store_locked_append_g5(void *payload_g_data, int64_t payl
     GS_GL->store_data_g5.len = t102;
     GS(gs_sp + 0)->top = t100;
     GS(gs_sp + 0)->top = rec_g.base;
-    GS_UNREACHABLE(gs_file1, 456);
+    GS_UNREACHABLE(gs_file1, 460);
     t99 = (store_Status_g5){0};
     return t99;
 }
@@ -12339,7 +12339,7 @@ static store_Status_g5 store_save_g5_139(void *body_g_data, int64_t body_g_len, 
     }
     int64_t rev_g;
     t35.data = (uint8_t *)((payload_g.base)); t35.len = (payload_g.len);
-    t36 = store_locked_append_g5(t35.data, t35.len, gs_sub_i64((int64_t)(((payload_g.len))), (body_g.len), gs_file1, 451), m_g.id_g, m_g.rev_g, merging_g, &rev_g, gs_sp + 2);
+    t36 = store_locked_append_g5(t35.data, t35.len, gs_sub_i64((int64_t)(((payload_g.len))), (body_g.len), gs_file1, 455), m_g.id_g, m_g.rev_g, merging_g, &rev_g, gs_sp + 2);
     status_g = t36;
     int32_t t37 = GS_GL->store_lock_fd_g5;
     store_unlock(t37);
@@ -12354,7 +12354,7 @@ static store_Status_g5 store_save_g5_139(void *body_g_data, int64_t body_g_len, 
     GS(gs_sp + 1)->top = t41;
     GS(gs_sp + 1)->top = payload_g.base;
     GS(gs_sp + 0)->top = scratch_g.base;
-    GS_UNREACHABLE(gs_file1, 435);
+    GS_UNREACHABLE(gs_file1, 439);
     t40 = (store_Status_g5){0};
     return t40;
 }
@@ -14159,8 +14159,8 @@ static uint8_t store_locked_compact_g5(int64_t gs_sp) {
             uint8_t *t14 = (GS_GL->store_data_g5.base);
             int64_t t15 = (GS_GL->store_data_g5.len);
             int64_t t16 = (*e_g_2).rec_g;
-            int64_t t17 = gs_add_i64((int64_t)((*e_g_2).at_g), (*e_g_2).size_g, gs_file1, 496);
-            if (t16 < 0 || t17 < t16 || t17 > t15) gs_abort(GS_E_SLICE, gs_file1, 496);
+            int64_t t17 = gs_add_i64((int64_t)((*e_g_2).at_g), (*e_g_2).size_g, gs_file1, 500);
+            if (t16 < 0 || t17 < t16 || t17 > t15) gs_abort(GS_E_SLICE, gs_file1, 500);
             t12.data = (uint8_t *)(t14) + t16; t12.len = t17 - t16;
         }
         t18 = t12;
@@ -14272,7 +14272,7 @@ static uint8_t store_locked_compact_g5(int64_t gs_sp) {
     GS(gs_sp + 0)->top = t61;
     GS(gs_sp + 1)->top = next_g.base;
     GS(gs_sp + 0)->top = keep_g.base;
-    GS_UNREACHABLE(gs_file1, 565);
+    GS_UNREACHABLE(gs_file1, 569);
     uint8_t t60 = {0};
     return t60;
 }
@@ -15664,7 +15664,7 @@ static void verify_g(void *path_g_data, int64_t path_g_len, int64_t acked_g, int
                             t54 = id_g_2;
                             int64_t t55 = t54.len;
                             int64_t t56 = (int64_t)key_g_3.len;
-                            if (t56 + t55 > 64) gs_abort(GS_E_CAPACITY, gs_file1, 487);
+                            if (t56 + t55 > 64) gs_abort(GS_E_CAPACITY, gs_file1, 491);
                             gs_memcpy(key_g_3.e + t56, t54.data, (size_t)(t55 * 1));
                             key_g_3.len = (uint8_t)(t56 + t55);
                             int64_t * have_g;
@@ -15676,7 +15676,7 @@ static void verify_g(void *path_g_data, int64_t path_g_len, int64_t acked_g, int
                                 goto L51;
                             }
                             int64_t t59 = (*have_g);
-                            e_g = &(*(store_Entry_g5 *)(((GS_GL->store_entries_g5.base) + GS_IDX((int64_t)(t59), (GS_GL->store_entries_g5.len), gs_file1, 490) * 146)));
+                            e_g = &(*(store_Entry_g5 *)(((GS_GL->store_entries_g5.base) + GS_IDX((int64_t)(t59), (GS_GL->store_entries_g5.len), gs_file1, 494) * 146)));
                             goto L51;
                         }
                         L51:;
@@ -15686,8 +15686,8 @@ static void verify_g(void *path_g_data, int64_t path_g_len, int64_t acked_g, int
                             uint8_t *t64 = (GS_GL->store_data_g5.base);
                             int64_t t65 = (GS_GL->store_data_g5.len);
                             int64_t t66 = (*e_g_2).at_g;
-                            int64_t t67 = gs_add_i64((int64_t)((*e_g_2).at_g), (*e_g_2).size_g, gs_file1, 493);
-                            if (t66 < 0 || t67 < t66 || t67 > t65) gs_abort(GS_E_SLICE, gs_file1, 493);
+                            int64_t t67 = gs_add_i64((int64_t)((*e_g_2).at_g), (*e_g_2).size_g, gs_file1, 497);
+                            if (t66 < 0 || t67 < t66 || t67 > t65) gs_abort(GS_E_SLICE, gs_file1, 497);
                             t62.data = (uint8_t *)(t64) + t66; t62.len = t67 - t66;
                         }
                         int64_t t68 = (*want_g).line_g;
@@ -16030,9 +16030,9 @@ static int64_t store_walk_g5_194(int64_t from_g, dictionary_g_sl_u8_b *whole_g, 
                 if (good_g) {
                     uint8_t *t4 = (GS_GL->store_data_g5.base);
                     int64_t t5 = (GS_GL->store_data_g5.len);
-                    int64_t t6 = gs_add_i64((int64_t)(at_g_2), 12, gs_file1, 547);
-                    int64_t t7 = gs_add_i64((int64_t)(at_g_2), n_g_2, gs_file1, 547);
-                    if (t6 < 0 || t7 < t6 || t7 > t5) gs_abort(GS_E_SLICE, gs_file1, 547);
+                    int64_t t6 = gs_add_i64((int64_t)(at_g_2), 12, gs_file1, 551);
+                    int64_t t7 = gs_add_i64((int64_t)(at_g_2), n_g_2, gs_file1, 551);
+                    if (t6 < 0 || t7 < t6 || t7 > t5) gs_abort(GS_E_SLICE, gs_file1, 551);
                     payload_g.data = (uint8_t *)(t4) + t6; payload_g.len = t7 - t6;
                     {
                         payload_g_2 = payload_g;
@@ -16182,9 +16182,9 @@ static int64_t store_walk_g5_194(int64_t from_g, dictionary_g_sl_u8_b *whole_g, 
             if (good_g_2) {
                 uint8_t *t59 = (GS_GL->store_data_g5.base);
                 int64_t t60 = (GS_GL->store_data_g5.len);
-                int64_t t61 = gs_add_i64((int64_t)(at_g_3), 12, gs_file1, 547);
-                int64_t t62 = gs_add_i64((int64_t)(at_g_3), n_g_3, gs_file1, 547);
-                if (t61 < 0 || t62 < t61 || t62 > t60) gs_abort(GS_E_SLICE, gs_file1, 547);
+                int64_t t61 = gs_add_i64((int64_t)(at_g_3), 12, gs_file1, 551);
+                int64_t t62 = gs_add_i64((int64_t)(at_g_3), n_g_3, gs_file1, 551);
+                if (t61 < 0 || t62 < t61 || t62 > t60) gs_abort(GS_E_SLICE, gs_file1, 551);
                 payload_g_3.data = (uint8_t *)(t59) + t61; payload_g_3.len = t62 - t61;
                 {
                     payload_g_4 = payload_g_3;
@@ -16959,9 +16959,9 @@ static int64_t store_walk_g5_215(int64_t from_g, dictionary_g_l64_u8_i64 *last_g
                 if (good_g) {
                     uint8_t *t4 = (GS_GL->store_data_g5.base);
                     int64_t t5 = (GS_GL->store_data_g5.len);
-                    int64_t t6 = gs_add_i64((int64_t)(at_g_2), 12, gs_file1, 547);
-                    int64_t t7 = gs_add_i64((int64_t)(at_g_2), n_g_2, gs_file1, 547);
-                    if (t6 < 0 || t7 < t6 || t7 > t5) gs_abort(GS_E_SLICE, gs_file1, 547);
+                    int64_t t6 = gs_add_i64((int64_t)(at_g_2), 12, gs_file1, 551);
+                    int64_t t7 = gs_add_i64((int64_t)(at_g_2), n_g_2, gs_file1, 551);
+                    if (t6 < 0 || t7 < t6 || t7 > t5) gs_abort(GS_E_SLICE, gs_file1, 551);
                     payload_g.data = (uint8_t *)(t4) + t6; payload_g.len = t7 - t6;
                     {
                         payload_g_2 = payload_g;
@@ -17186,9 +17186,9 @@ static int64_t store_walk_g5_215(int64_t from_g, dictionary_g_l64_u8_i64 *last_g
             if (good_g_2) {
                 uint8_t *t79 = (GS_GL->store_data_g5.base);
                 int64_t t80 = (GS_GL->store_data_g5.len);
-                int64_t t81 = gs_add_i64((int64_t)(at_g_3), 12, gs_file1, 547);
-                int64_t t82 = gs_add_i64((int64_t)(at_g_3), n_g_3, gs_file1, 547);
-                if (t81 < 0 || t82 < t81 || t82 > t80) gs_abort(GS_E_SLICE, gs_file1, 547);
+                int64_t t81 = gs_add_i64((int64_t)(at_g_3), 12, gs_file1, 551);
+                int64_t t82 = gs_add_i64((int64_t)(at_g_3), n_g_3, gs_file1, 551);
+                if (t81 < 0 || t82 < t81 || t82 > t80) gs_abort(GS_E_SLICE, gs_file1, 551);
                 payload_g_3.data = (uint8_t *)(t79) + t81; payload_g_3.len = t82 - t81;
                 {
                     payload_g_4 = payload_g_3;

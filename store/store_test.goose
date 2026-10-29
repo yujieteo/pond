@@ -378,6 +378,12 @@ fn test_signed() {
     expect("a changed byte in a record from a peer is found", !store::each_in(records) { g, b => {} });
     expect("after a pick, a reader has no siblings", store::open(dir, false) && tops("s1") == str(p2, "\n") && sig_of("s1") == sig);
     expect("after a pick, a compaction drops the old siblings", store::open(dir, true) && store::compact() && store::record_count() == 3 && tops("s1") == str(p2, "\n"));
+    let p3 = put("s3", 1, "2026-10-28", "x");
+    s, rev = store::append_signed(p3, sig);
+    let e3 = store::get("s3");
+    expect("a signed append keeps its signature", is(s, store::Status.Created) && e3 && store::signature(e3) == sig);
+    s, rev = store::append_signed(put("s3", 1, "2026-10-28", "y"), sig);
+    expect("a signed append of another body at the same rev is refused", is(s, store::Status.Conflict) && rev == 1 && tops("s3") == str(p3, "\n"));
     store::close();
 }
 

@@ -25,6 +25,19 @@ final class Store {
     /// The save service. A launch argument `-server http://127.0.0.1:8787` changes it for a local test server.
     let server = URL(string: UserDefaults.standard.string(forKey: "server") ?? "https://teoyujie.org")!
 
+    /// The desktop node over the VPN, for the saves when the server is down (docs/store.md, phase 4):
+    /// `http://<its numeric WireGuard address>:8788`. Empty: no fallback. "Show key" sets it, and so does `-desktop <url>`.
+    var desktop = UserDefaults.standard.string(forKey: "desktop") ?? "" {
+        didSet { UserDefaults.standard.set(desktop, forKey: "desktop") }
+    }
+
+    /// The nodes that take a save, in the order of the tries: the server, then the desktop if it is a valid URL.
+    var nodes: [URL] {
+        guard let url = URL(string: desktop.trimmingCharacters(in: .whitespaces)), ["http", "https"].contains(url.scheme), url.host() != nil
+        else { return [server] }
+        return [server, url]
+    }
+
     private let file = URL.applicationSupportDirectory.appending(path: "journal.json")
     private let experimentsFile = URL.applicationSupportDirectory.appending(path: "experiments.json")
     private let interestsFile = URL.applicationSupportDirectory.appending(path: "interests.json")
@@ -318,7 +331,8 @@ final class Store {
         try? JSONEncoder().encode(journal).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
-    /// Sends each waiting change, signed. A failed send stays in the journal and goes again later:
+    /// Sends each waiting change, signed, to the server, or to the desktop when the server is down.
+    /// A failed send stays in the journal and goes again later:
     /// at the next change, when the app comes back, or after a minute while the app is open.
     func flush() async {
         guard !sending else { return }
@@ -332,7 +346,7 @@ final class Store {
             guard !changes.isEmpty else { break }
             let signed = changes.compactMap { try? SignedChange($0, signer: key.signer) }
             guard signed.count == changes.count else { break }
-            let replies = await Outbox.send(signed, server: server, transport: Outbox.urlSession)
+            let replies = await Outbox.send(signed, nodes: nodes, transport: Outbox.urlSession)
             var again = false
             for (change, reply) in zip(changes, replies) where journal.apply(reply, to: change) { again = true }
             save()

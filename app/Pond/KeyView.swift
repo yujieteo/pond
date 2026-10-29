@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "Show key": the public key of this phone in the server's key-file format, to enrol it by hand.
+/// "Show key": the public key of this phone in the server's key-file format, to enrol it by hand, and the address of the desktop.
 struct KeyView: View {
     @Environment(Store.self) private var store
 
@@ -27,6 +27,16 @@ struct KeyView: View {
             case nil:
                 ProgressView()
             }
+            @Bindable var store = store
+            Text("Desktop over the VPN").font(.system(size: 15, weight: .semibold)).padding(.top, 8)
+            Text("When the server is down, the phone saves to the desktop. Turn on WireGuard on the phone.")
+                .font(.system(size: 15)).foregroundStyle(Color.muted)
+            TextField("http://10.0.0.2:8788", text: $store.desktop)
+                .font(.system(size: 15, design: .monospaced))
+                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                .accessibilityIdentifier("desktop")
+                .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.line))
             Spacer()
         }
         .foregroundStyle(Color.ink)
