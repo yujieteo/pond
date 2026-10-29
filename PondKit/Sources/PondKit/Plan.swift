@@ -66,6 +66,8 @@ public struct Plan: Equatable, Sendable {
 
     /// The heading of the list of the slots that the plan editor adds.
     static let addedHeading = "**Added in the app**"
+    /// The heading of the weekday core, for a plan with no core: the plan editor adds it with the first "Every day" item.
+    static let coreHeading = "**Weekday core**"
 
     public func slots(on day: Weekday) -> [Slot] {
         slots.filter { $0.days.contains(day) }
@@ -136,21 +138,23 @@ public struct Plan: Equatable, Sendable {
         replace(slot)
     }
 
-    /// Adds a slot at the end of the list "Added in the app". The first added slot makes the list, after the list or the table of the last slot.
-    public mutating func addSlot(_ text: String, days: Set<Weekday>) {
+    /// Adds a slot at the end of the list "Added in the app", or an "Every day" item (`.core`) at the end of the weekday core.
+    /// The first slot of a list makes the list, after the list or the table of the last slot.
+    public mutating func addSlot(_ text: String, days: Set<Weekday>, part: Slot.Part = .added) {
         var lines = self.lines
-        let slot = Slot(text: Plan.oneLine(text), made: nil, domains: [], days: .on(days), part: .added, line: 0)
-        if let last = slots.last(where: { $0.part == .added }) {
+        let heading = part == .core ? Plan.coreHeading : Plan.addedHeading
+        let slot = Slot(text: Plan.oneLine(text), made: nil, domains: [], days: .on(days), part: part, line: 0)
+        if let last = slots.last(where: { $0.part == part }) {
             lines.insert(Plan.line(slot, was: ""), at: last.line + 1)
-        } else if let heading = lines.firstIndex(of: Plan.addedHeading) {
-            lines.insert(contentsOf: ["", Plan.line(slot, was: "")], at: heading + 1)
+        } else if let index = lines.firstIndex(where: { $0.hasPrefix(heading.dropLast(2)) }) {
+            lines.insert(contentsOf: ["", Plan.line(slot, was: "")], at: index + 1)
         } else {
             var after = slots.last.map { $0.line + 1 } ?? lines.count
             while after < lines.count, !lines[after].trimmingCharacters(in: .whitespaces).isEmpty,
                   !lines[after].hasPrefix("#"), !lines[after].hasPrefix("**") {
                 after += 1
             }
-            lines.insert(contentsOf: ["", Plan.addedHeading, "", Plan.line(slot, was: "")], at: after)
+            lines.insert(contentsOf: ["", heading, "", Plan.line(slot, was: "")], at: after)
         }
         self = Plan(markdown: lines.joined(separator: "\n"))
     }

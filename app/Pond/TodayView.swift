@@ -21,7 +21,7 @@ struct Toast: Identifiable {
 
 /// The screens of the floating bar.
 enum Tab: String, CaseIterable {
-    case today = "Today", plan = "Plan", grid = "Grid", experiments = "Experiments"
+    case today = "Today", log = "Log", plan = "Plan", grid = "Grid", experiments = "Experiments"
 }
 
 /// Today (#today in the mock-up): the menu (R2), "Every day" (R13) and the entries of today.
@@ -39,6 +39,7 @@ struct TodayView: View {
                 Group {
                     switch tab {
                     case .today: today
+                    case .log: LogView { record in editing = Editing(id: record.id, entry: record.entry, isNew: false) }
                     case .plan: PlanView(undo: undo)
                     case .grid: GridView { tab = .today }
                     case .experiments: ExperimentsView(undo: undo)
@@ -94,10 +95,6 @@ struct TodayView: View {
         }
     }
 
-    private func heading(_ text: String) -> some View {
-        Text(text).font(.serif(20)).padding(.top, 28).padding(.bottom, 8)
-    }
-
     // MARK: the menu
 
     /// The invite time (R3): the notification comes each day at this time.
@@ -126,14 +123,18 @@ struct TodayView: View {
     }
 
     private func choiceCard(_ choice: Choice, picked: Bool) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        let event = store.event(of: choice)
+        return HStack(alignment: .top, spacing: 12) {
             Text(choice.icon).font(.system(size: 18))
                 .frame(width: 36, height: 36).background(Circle().fill(Color.pondBackground))
             VStack(alignment: .leading, spacing: 4) {
-                Text(choice.why).font(.system(size: 13)).foregroundStyle(Color.muted)
+                Text(why(choice, event: event)).font(.system(size: 13)).foregroundStyle(Color.muted)
                 Text(choice.entry.title).font(.serif(18.5)).lineSpacing(1).fixedSize(horizontal: false, vertical: true)
                 if picked {
                     HStack(spacing: 8) {
+                        if let event {
+                            Link("Go", destination: event.directions).buttonStyle(PillStyle(kind: .quiet))
+                        }
                         Button("Done") {
                             if let id = store.done(on: store.today) { recorded(id) }
                         }.buttonStyle(PillStyle(kind: .primary))
@@ -148,13 +149,22 @@ struct TodayView: View {
         .background(RoundedRectangle(cornerRadius: 16).fill(Color.card).shadow(color: .ink.opacity(0.06), radius: 6, y: 3))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(picked ? Color.ink : Color.line, lineWidth: picked ? 2 : 1))
         .contentShape(RoundedRectangle(cornerRadius: 16))
+        .onAppear { if let event { TravelTime.shared.show(event.place) } }
+    }
+
+    /// The line above the title. A live event adds its travel time: "Live · 20:00 · 12 min away · free".
+    private func why(_ choice: Choice, event: Event?) -> String {
+        guard let event, let minutes = TravelTime.shared.minutes[event.place] else { return choice.why }
+        var parts = choice.why.components(separatedBy: " · ")
+        parts.insert("\(minutes) min away", at: min(2, parts.count))
+        return parts.joined(separator: " · ")
     }
 
     // MARK: every day
 
     private var everyDay: some View {
-        HStack(spacing: 8) {
-            ForEach(Store.everyDay, id: \.self) { name in
+        FlowLayout(spacing: 8) {
+            ForEach(store.everyDay, id: \.self) { name in
                 let on = store.everyDayRecord(name) != nil
                 Button(on ? "✓ \(name)" : name) {
                     let wasOn = on
@@ -190,7 +200,8 @@ struct TodayView: View {
     }
 
     private func meta(_ record: Record) -> String {
-        var parts = [store.domainName(record.entry.domain), record.entry.mode?.label].compactMap { $0 }
+        var parts = record.entry.interest.map { ["Paper", $0] }
+            ?? [store.domainName(record.entry.domain), record.entry.mode?.label].compactMap { $0 }
         if record.refused { parts.append("not accepted") } else if record.waiting { parts.append("waiting") }
         return parts.joined(separator: " · ")
     }
@@ -211,7 +222,7 @@ struct TodayView: View {
             ForEach(Tab.allCases, id: \.self) { item in
                 Button(item.rawValue) { tab = item }
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(tab == item ? Color.pondBackground : Color.ink)
-                    .frame(minWidth: 52, minHeight: 48).padding(.horizontal, 6)
+                    .frame(minWidth: tap, minHeight: 48).padding(.horizontal, 4)
                     .background(Capsule().fill(tab == item ? Color.ink : .clear))
                     .accessibilityAddTraits(tab == item ? .isSelected : [])
             }

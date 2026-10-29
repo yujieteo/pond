@@ -14,10 +14,12 @@ final class Store {
     private(set) var invite: Invite
     /// The runs of experiments. They stay on the phone (R10).
     private(set) var experiments: ExperimentLog
+    /// The interests of "One paper" and their fetched papers. They stay on the phone.
+    private(set) var interests: Interests
+    /// The live events saved for their day (R15). They stay on the phone.
+    private(set) var events: [Event]
     private(set) var key: Result<DeviceKey, Error>?
 
-    /// "Every day" items (R13). They stay here until the plan editor (build step 11) keeps them in the plan.
-    static let everyDay = ["RSS", "Textbook", "Fiction"]
     static let everyDaySlot = "Every day"
 
     /// The save service. A launch argument `-server http://127.0.0.1:8787` changes it for a local test server.
@@ -25,6 +27,8 @@ final class Store {
 
     private let file = URL.applicationSupportDirectory.appending(path: "journal.json")
     private let experimentsFile = URL.applicationSupportDirectory.appending(path: "experiments.json")
+    private let interestsFile = URL.applicationSupportDirectory.appending(path: "interests.json")
+    private let eventsFile = URL.applicationSupportDirectory.appending(path: "events.json")
     private var sending = false
     private var wake: Task<Void, Never>?
     private var scheduling: Task<Void, Never>?
@@ -32,6 +36,11 @@ final class Store {
     init() {
         journal = (try? JSONDecoder().decode(Journal.self, from: Data(contentsOf: file))) ?? Journal()
         experiments = (try? JSONDecoder().decode(ExperimentLog.self, from: Data(contentsOf: experimentsFile))) ?? ExperimentLog()
+        interests = (try? JSONDecoder().decode(Interests.self, from: Data(contentsOf: interestsFile))) ?? Interests.starter
+        // An event of an earlier day goes, with no mark.
+        let today = Menu.day(.now)
+        events = ((try? JSONDecoder().decode([Event].self, from: Data(contentsOf: eventsFile))) ?? [])
+            .filter { Menu.day($0.start) >= today }
         plan = PlanSync.shared.plan
         invite = SharedInvite.load()
         offer()
@@ -45,6 +54,12 @@ final class Store {
     /// The entries of today on the screen, newest first.
     var doneToday: [Record] {
         journal.records.filter { !$0.removed && $0.entry.date == today }.reversed()
+    }
+
+    /// The "Every day" items of today (R13): the weekday core of the plan on today's weekday, by their short names.
+    var everyDay: [String] {
+        let weekday = Weekday(calendarWeekday: Calendar.current.component(.weekday, from: .now))
+        return plan.slots(on: weekday).filter { $0.part == .core }.map { Menu.dailyName($0.text) }
     }
 
     func everyDayRecord(_ name: String) -> Record? {
@@ -81,9 +96,10 @@ final class Store {
 
     private func offer(before: Invite) {
         let journal = journal
-        invite.offer(plan: plan, journal: &self.journal, experiments: experiments, now: .now)
+        invite.offer(plan: plan, journal: &self.journal, experiments: experiments, interests: interests, events: events, now: .now)
         if self.journal != journal { save() }
         if !inviteChanged(before) { schedule() }
+        LiveEvent.update(invite[today], events: events)
     }
 
     /// A pick changes the notification in place and the widgets (sync 2 and 14).
@@ -91,6 +107,7 @@ final class Store {
         let before = invite
         invite.pick(index, on: day)
         inviteChanged(before)
+        LiveEvent.update(invite[day], events: events)
     }
 
     /// "Pick for today" on an empty cell of the grid.
@@ -122,7 +139,77 @@ final class Store {
         }
         let id = record(entry)
         inviteChanged(before)
+        LiveEvent.update(invite[day], events: events)
         return id
+    }
+
+    // MARK: interests (R14)
+
+    func setInterests(_ interests: Interests) {
+        self.interests = interests
+        Store.write(interests, to: interestsFile)
+        offer()
+    }
+
+    /// Reads the feeds of each interest, at most once in 6 hours. A feed that fails keeps its earlier papers.
+    func fetchPapers() async {
+        guard (interests.fetched.map { $0 < .now - 6 * 3600 } ?? true) else { return }
+        var papers = interests.papers
+        for topic in interests.topics {
+            var items: [Paper] = []
+            var failed = false
+            for source in topic.sources {
+                if let (data, _) = try? await URLSession.shared.data(from: source.url) {
+                    items += FeedParser.parse(data)
+                } else {
+                    failed = true
+                }
+            }
+            if !failed || !items.isEmpty { papers[topic.name] = Array(items.prefix(100)) }
+        }
+        var next = interests
+        next.papers = papers.filter { name, _ in interests.topics.contains { $0.name == name } }
+        next.fetched = .now
+        setInterests(next)
+    }
+
+    // MARK: live events (R15)
+
+    func saveEvent(_ event: Event) {
+        events.removeAll { $0.id == event.id }
+        events.append(event)
+        events.sort { $0.start < $1.start }
+        eventsChanged()
+    }
+
+    /// The event goes at once. It is only on the phone, so "Undo" puts it back with no send.
+    func removeEvent(_ id: String) {
+        events.removeAll { $0.id == id }
+        eventsChanged()
+    }
+
+    /// "Done" on the live event of `day`, from Today or the Live Activity: the same as "Done" on its pick.
+    @discardableResult
+    func doneEvent(_ id: String, on day: String) -> String? {
+        guard let index = invite[day]?.choices.firstIndex(where: { $0.source == .event(id: id) }) else { return nil }
+        if invite[day]?.pick != index { pick(index, on: day) }
+        return done(on: day)
+    }
+
+    /// The saved event of a live choice.
+    func event(of choice: Choice) -> Event? {
+        guard case .event(let id) = choice.source else { return nil }
+        return events.first { $0.id == id }
+    }
+
+    private func eventsChanged() {
+        Store.write(events, to: eventsFile)
+        offer()
+    }
+
+    private static func write(_ value: some Encodable, to file: URL) {
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONEncoder().encode(value).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
     // MARK: experiments
@@ -217,7 +304,8 @@ final class Store {
         if let record = everyDayRecord(name) {
             remove(record.id, undo: 0)
         } else {
-            record(Entry(date: today, title: name, domain: 1, mode: .home, slot: Store.everyDaySlot))
+            let slot = plan.slots.first { $0.part == .core && Menu.dailyName($0.text) == name }
+            record(Entry(date: today, title: name, domain: slot?.domains.first ?? 1, mode: .home, slot: Store.everyDaySlot))
         }
     }
 
