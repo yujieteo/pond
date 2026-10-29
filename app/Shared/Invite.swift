@@ -28,6 +28,7 @@ extension Choice {
         case .enjoyed: "🎵"
         case .notVisited: entry.mode == .live ? "🎟" : "🧭"
         case .experiment: "🌱"
+        case .event: "🎟"
         }
     }
 }

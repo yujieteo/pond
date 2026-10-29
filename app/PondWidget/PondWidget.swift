@@ -6,7 +6,10 @@ import WidgetKit
 /// The widgets (R16, #widget in the mock-up): the same choices or the same pick as the notification, with "Done".
 @main
 struct PondWidgets: WidgetBundle {
-    var body: some Widget { InviteWidget() }
+    var body: some Widget {
+        InviteWidget()
+        EventActivityWidget()
+    }
 }
 
 struct InviteWidget: Widget {

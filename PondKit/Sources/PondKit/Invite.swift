@@ -14,6 +14,22 @@ public struct InviteDay: Codable, Equatable, Sendable {
         pick.flatMap { choices.indices.contains($0) ? choices[$0] : nil }
     }
 
+    /// Puts the live event `choice` in place of the day's "not visited" choice or of its earlier event, when that choice
+    /// is not the pick. When it is the pick, the event comes after it, if the day has room. With no `choice`, the earlier event goes, if it is not the pick: its event was removed.
+    mutating func live(_ choice: Choice?) {
+        let old = choices.firstIndex { if case .event = $0.source { true } else { false } }
+        if let old, choices[old] == choice || pick == old { return }
+        guard let choice else {
+            if let old { choices.remove(at: old); if let p = pick, p > old { pick = p - 1 } }
+            return
+        }
+        if let index = old ?? choices.firstIndex(where: { $0.source == .notVisited }), pick != index {
+            choices[index] = choice
+        } else if choices.count < Invite.maxChoices {
+            choices.append(choice)
+        }
+    }
+
     /// Puts `choice` in place of the day's experiment choice, as the last choice. A pick of a choice that goes is cleared.
     mutating func experiment(_ choice: Choice?) {
         let old = choices.firstIndex { if case .experiment = $0.source { true } else { false } }
@@ -65,7 +81,10 @@ public struct Invite: Codable, Equatable, Sendable {
     /// An earlier day goes, with no mark. Each "enjoyed recently" choice of an offered day marks its record in `journal`,
     /// so a record comes back at most once in `Menu.enjoyedGap` days (sync 5). The days not yet offered mark a copy only.
     /// The active experiment of `experiments` is the last choice of each day of its run, also of an offered day (sync 7).
-    public mutating func offer(plan: Plan, journal: inout Journal, experiments: ExperimentLog = ExperimentLog(), now: Date,
+    /// "One paper" offers a different paper on each day not yet read, and a saved live event is the live choice of its day,
+    /// also of an offered day (sync 12).
+    public mutating func offer(plan: Plan, journal: inout Journal, experiments: ExperimentLog = ExperimentLog(),
+                               interests: Interests = Interests(), events: [Event] = [], now: Date,
                                calendar: Calendar = .current) {
         let today = Menu.day(now, calendar)
         let offered = days.filter { day in
@@ -76,15 +95,23 @@ public struct Invite: Codable, Equatable, Sendable {
         }
         let kept = offered.filter { $0.date == today }
         var scratch = journal
+        var papers: [String: String] = [:]
         days = (0..<Invite.daysAhead).compactMap { ahead in
             guard let date = calendar.date(byAdding: .day, value: ahead, to: now) else { return nil }
             let day = Menu.day(date, calendar)
-            if let kept = kept.first(where: { $0.date == day }) { return kept }
-            let choices = Array(Menu.choices(plan: plan, journal: scratch, date: date, calendar: calendar).prefix(Invite.maxChoices))
-            for case .enjoyed(let id) in choices.map(\.source) { scratch.offer(id, on: day) }
-            return InviteDay(date: day, choices: choices)
+            let choices = kept.first { $0.date == day }?.choices
+                ?? Array(Menu.choices(plan: plan, journal: scratch, date: date, calendar: calendar, interests: interests,
+                                      events: events, offered: papers).prefix(Invite.maxChoices))
+            for choice in choices {
+                if case .enjoyed(let id) = choice.source { scratch.offer(id, on: day) }
+                if let interest = choice.entry.interest, let link = choice.entry.link { papers[link.absoluteString] = interest }
+            }
+            return kept.first { $0.date == day } ?? InviteDay(date: day, choices: choices)
         }
-        for index in days.indices { days[index].experiment(experiments.choice(on: days[index].date)) }
+        for index in days.indices {
+            days[index].live(Event.on(days[index].date, in: events, calendar: calendar).first?.choice(calendar))
+            days[index].experiment(experiments.choice(on: days[index].date))
+        }
     }
 
     /// Picks `choice` on `date`, in place of the day's "not visited" choice: an empty cell of the grid.

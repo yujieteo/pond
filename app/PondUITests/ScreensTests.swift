@@ -1,6 +1,6 @@
 import XCTest
 
-/// The simulator proof of the plan editor, the grid and the experiments. It needs no server: the entries wait in the
+/// The simulator proof of the plan editor, the grid, the experiments, daily reading, the interests, live events and the log. It needs no server: the entries wait in the
 /// outbox, and `-github` keeps the plan off the network. TEST_RUNNER_POND_SHOTS is a directory for the screenshots.
 @MainActor
 final class ScreensTests: XCTestCase {
@@ -121,6 +121,145 @@ final class ScreensTests: XCTestCase {
         XCTAssertTrue(app.staticTexts[notice].waitForExistence(timeout: 5))
         app.swipeUp()
         save("experiment-closed", in: shots)
+    }
+
+    /// A daily read added in the plan editor is a button of the "Every day" row on Today, and a tap puts it in the log.
+    func testDailyReading() throws {
+        let shots = try XCTUnwrap(env["POND_SHOTS"], "set TEST_RUNNER_POND_SHOTS")
+        let app = launch()
+        app.buttons["Plan"].tap()
+        app.buttons["+ Add a daily read"].tap()
+        let new = app.otherElements["New daily read"]
+        XCTAssertTrue(new.waitForExistence(timeout: 5))
+        let name = "Poetry \(Int.random(in: 1000...9999))"
+        let field = new.descendants(matching: .any).matching(NSPredicate(format: "label == 'Slot'")).firstMatch
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 14) + "Text (1): \(name), one poem\n")
+        let slot = app.otherElements["Text (1): \(name), one poem"]
+        XCTAssertTrue(slot.waitForExistence(timeout: 5))
+        let today = weekday()
+        if slot.buttons[today].value as? String == "off" { slot.buttons[today].tap() }
+        save("plan-daily", in: shots)
+
+        app.buttons["Today"].tap()
+        let button = app.buttons[name]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        button.tap()
+        XCTAssertTrue(app.buttons["✓ \(name)"].waitForExistence(timeout: 5))
+        save("today-daily", in: shots)
+
+        app.buttons["Log"].tap()
+        let entry = app.descendants(matching: .any)["log \(name)"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        XCTAssertTrue(entry.label.contains("waiting"), entry.label)
+        save("log", in: shots)
+
+        // A second tap takes it back, with no "Undo".
+        app.buttons["Today"].tap()
+        app.buttons["✓ \(name)"].tap()
+        XCTAssertTrue(app.buttons[name].waitForExistence(timeout: 5))
+        app.buttons["Plan"].tap()
+        app.otherElements["Text (1): \(name), one poem"].buttons["Remove slot"].tap()
+    }
+
+    /// An interest: its name, a feed, a classic and the "old" days; "Remove interest" with "Undo".
+    func testInterest() throws {
+        let shots = try XCTUnwrap(env["POND_SHOTS"], "set TEST_RUNNER_POND_SHOTS")
+        let app = launch()
+        app.buttons["Plan"].tap()
+        let add = app.buttons["Add an interest"]
+        while !add.isHittable || add.frame.maxY > app.buttons["Today"].frame.minY - 8 { app.swipeUp() }
+        save("plan-interests", in: shots)
+        add.tap()
+
+        let name = "Optics \(Int.random(in: 1000...9999))"
+        let field = app.textFields["Interest name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12) + name + "\n")
+        app.textFields["Feed"].tap()
+        app.textFields["Feed"].typeText("physics.optics")
+        app.buttons["Add"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["physics.optics"].waitForExistence(timeout: 5))
+        app.textFields["Classic title"].tap()
+        app.textFields["Classic title"].typeText("Maiman 1960: stimulated optical radiation in ruby")
+        app.textFields["Classic link"].tap()
+        app.textFields["Classic link"].typeText("https://www.nature.com/articles/187493a0")
+        app.buttons.matching(identifier: "Add").element(boundBy: 1).tap()
+        XCTAssertTrue(app.staticTexts["Maiman 1960: stimulated optical radiation in ruby"].waitForExistence(timeout: 5))
+        save("interest", in: shots)
+        app.swipeDown(velocity: .fast)
+
+        let chip = app.buttons[name]
+        XCTAssertTrue(chip.waitForExistence(timeout: 5))
+        let old = app.otherElements["Old days"].buttons[weekday()]
+        let before = old.value as? String
+        old.tap()
+        XCTAssertNotEqual(app.otherElements["Old days"].buttons[weekday()].value as? String, before)
+        old.tap()
+
+        chip.tap()
+        let remove = app.buttons["Remove interest"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        remove.tap()
+        XCTAssertFalse(app.buttons[name].waitForExistence(timeout: 1))
+        app.buttons["Undo"].tap()
+        XCTAssertTrue(app.buttons[name].waitForExistence(timeout: 5))
+        app.buttons[name].tap()
+        app.buttons["Remove interest"].tap()
+    }
+
+    /// A live event saved for today is the live choice on Today, with "Go" and "Done". "Done" puts it in the log.
+    func testLiveEvent() throws {
+        let shots = try XCTUnwrap(env["POND_SHOTS"], "set TEST_RUNNER_POND_SHOTS")
+        let app = launch()
+        // An active experiment can take the last choice of the day.
+        app.buttons["Experiments"].tap()
+        if app.buttons["Close"].waitForExistence(timeout: 2) { close(app, notice: "") }
+        app.buttons["Plan"].tap()
+        let save = app.buttons["+ Save a live event"]
+        while !save.isHittable || save.frame.maxY > app.buttons["Today"].frame.minY - 8 { app.swipeUp() }
+        save.tap()
+        let title = "Open mic \(Int.random(in: 1000...9999))"
+        let field = app.textFields["Event title"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(title)
+        app.textFields["Place"].tap()
+        app.textFields["Place"].typeText("The Projector, Singapore")
+        app.textFields["Cost"].tap()
+        app.textFields["Cost"].typeText("free")
+        self.save("event", in: shots)
+        app.buttons["Save for that day"].tap()
+        XCTAssertTrue(app.otherElements["event \(title)"].waitForExistence(timeout: 5))
+
+        app.buttons["Today"].tap()
+        let dontAllow = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["Don’t Allow"]
+        if dontAllow.waitForExistence(timeout: 3) { dontAllow.tap() }
+        let card = app.staticTexts[title]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Live · 20:00 · free"].exists)
+        card.tap()
+        XCTAssertTrue(app.links["Go"].exists || app.buttons["Go"].exists)
+        self.save("today-live", in: shots)
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Fun?"].waitForExistence(timeout: 5))
+
+        app.buttons["Log"].tap()
+        let entry = app.descendants(matching: .any)["log \(title)"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        XCTAssertTrue(entry.label.contains("live"), entry.label)
+
+        app.buttons["Plan"].tap()
+        let row = app.otherElements["event \(title)"]
+        while !row.isHittable { app.swipeUp() }
+        row.buttons["Remove event"].tap()
+        XCTAssertFalse(app.otherElements["event \(title)"].exists)
+    }
+
+    /// Today's weekday, as the accessibility label of a day button.
+    private func weekday() -> String {
+        ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][Calendar.current.component(.weekday, from: .now) - 1]
     }
 
     private func close(_ app: XCUIApplication, notice: String) {

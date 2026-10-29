@@ -56,3 +56,36 @@ struct PillStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
+
+/// Puts its views in rows, left to right, and starts a new row when a view does not fit: the "Every day" row.
+struct FlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = frames(subviews, width: proposal.width ?? .infinity)
+        return CGSize(width: frames.map(\.maxX).max() ?? 0, height: frames.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (frame, subview) in zip(frames(subviews, width: bounds.width), subviews) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func frames(_ subviews: Subviews, width: CGFloat) -> [CGRect] {
+        var frames: [CGRect] = []
+        var point = CGPoint.zero
+        var row: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+            if point.x > 0, point.x + size.width > width {
+                point = CGPoint(x: 0, y: point.y + row + spacing)
+                row = 0
+            }
+            frames.append(CGRect(origin: point, size: CGSize(width: min(size.width, width), height: size.height)))
+            point.x += size.width + spacing
+            row = max(row, size.height)
+        }
+        return frames
+    }
+}

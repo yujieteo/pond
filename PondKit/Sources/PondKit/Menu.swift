@@ -9,6 +9,8 @@ public struct Choice: Codable, Equatable, Sendable {
         case notVisited
         /// The active experiment (docs/concepts.md, sync 7). "Done" counts a day and makes no entry.
         case experiment(id: String)
+        /// A live event saved for this day (docs/concepts.md, sync 12). It takes the place of the "not visited" choice.
+        case event(id: String)
     }
 
     public var source: Source
@@ -35,7 +37,10 @@ public enum Menu {
     /// An entry comes back as "enjoyed recently" at most once in this number of days (docs/concepts.md, sync 5).
     public static let enjoyedGap = 14
 
-    public static func choices(plan: Plan, journal: Journal, date: Date, calendar: Calendar = .current) -> [Choice] {
+    /// `offered` holds the papers of "One paper" on the days before `date` that are not read yet, by link, with their interest.
+    public static func choices(plan: Plan, journal: Journal, date: Date, calendar: Calendar = .current,
+                               interests: Interests = Interests(), events: [Event] = [],
+                               offered: [String: String] = [:]) -> [Choice] {
         let today = day(date, calendar)
         let weekday = Weekday(calendarWeekday: calendar.component(.weekday, from: date))
         let turn = calendar.ordinality(of: .day, in: .year, for: date) ?? 0
@@ -46,8 +51,14 @@ public enum Menu {
         if !slots.isEmpty {
             let slot = slots[turn % slots.count]
             let (label, what) = parts(slot.text)
-            choices.append(Choice(source: .slot, why: "Today's slot · \(label)",
-                                  entry: Entry(date: today, title: what, domain: slot.domains.first, mode: .home, slot: slot.text)))
+            if slot.isOnePaper, let (interest, paper) = interests.paper(on: today, weekday: weekday, journal: journal, offered: offered) {
+                choices.append(Choice(source: .slot, why: "One paper · \(interest.name) · \(interests.origin(of: paper, in: interest))",
+                                      entry: Entry(date: today, title: paper.title, link: paper.link, domain: slot.domains.first,
+                                                   mode: .home, slot: slot.text, interest: interest.name)))
+            } else {
+                choices.append(Choice(source: .slot, why: "Today's slot · \(label)",
+                                      entry: Entry(date: today, title: what, domain: slot.domains.first, mode: .home, slot: slot.text)))
+            }
         }
 
         let gapStart = day(calendar.date(byAdding: .day, value: -enjoyedGap, to: date) ?? date, calendar)
@@ -68,7 +79,9 @@ public enum Menu {
         let open = plan.domains.flatMap { domain in
             Mode.allCases.compactMap { mode in visited.contains("\(domain.number) \(mode.rawValue)") ? nil : (domain, mode) }
         }
-        if !open.isEmpty {
+        if let event = Event.on(today, in: events, calendar: calendar).first {
+            choices.append(event.choice(calendar))
+        } else if !open.isEmpty {
             let (domain, mode) = open[turn % open.count]
             choices.append(notVisited(domain, mode, day: today))
         }
@@ -86,6 +99,13 @@ public enum Menu {
     public static func day(_ date: Date, _ calendar: Calendar = .current) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
+    }
+
+    /// The name of an "Every day" item (R13) on Today: the words after the label, to the first comma or stop.
+    /// "Text (1): textbook, one section or one exercise, 15 minutes." gives "Textbook".
+    public static func dailyName(_ text: String) -> String {
+        let what = parts(text).what
+        return String(what.prefix { $0 != "," && $0 != "." })
     }
 
     /// "Text (1): essays, newsletters and saved articles. Skip ..." gives "Text" and "Essays, newsletters and saved articles".
