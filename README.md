@@ -3,7 +3,7 @@ A fun, low-energy media and experiments companion: iOS app, signed log, stream o
 
 - `docs/concepts.md`: the conceptual model.
 - `docs/protocol.md`: the signed save request, the server's replies and the read side.
-- `PondKit/`: the Swift package for the app: entry format and signing, the plan parser, the host-to-domain guess, and "One paper".
+- `PondKit/`: the Swift package for the app: entry format and signing, the plan parser and editor, the plan commit through the GitHub API, the grid, the starter experiments, the host-to-domain guess, and "One paper".
 - `server/`: the save service, the read service and `pond_node`, the daemon of the store with the sync between the nodes, in Goose, with the generated C beside them. `server/service/` has the service files of the daemon for OpenBSD, Linux and macOS.
 - `store/`: the storage engine for the log, in Goose: one append-only segment file with a checksum for each record, and an index by id, date and tag. `docs/store.md` is the design. `pond_node` keeps the store in shadow mode beside the entry files of pond_save.
 - `app/`: the iOS app, Waldenlog on the Home Screen: Today, the entry sheet, the phone key, the outbox, the plan editor, the grid and the experiments.
