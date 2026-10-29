@@ -30,6 +30,8 @@ final class PlanSync {
     private(set) var hasToken = PlanToken.exists
     private var state: State
     private var committing: Task<Void, Never>?
+    /// The request to the site repo now. There is one at a time, so that a commit never uses a SHA that another commit made old.
+    private var syncing: Task<Void, Never>?
 
     /// The GitHub API. A launch argument `-github http://127.0.0.1:9` changes it, for example to keep a test off the network.
     let api = URL(string: UserDefaults.standard.string(forKey: "github") ?? "https://api.github.com")!
@@ -68,25 +70,36 @@ final class PlanSync {
         committing = Task {
             try? await Task.sleep(for: PlanSync.delay)
             guard !Task.isCancelled else { return }
-            await commit()
+            await sync(load: false)
         }
     }
 
     /// When the app opens: sends a waiting change, or loads the site copy.
     func refresh() async {
-        if state.waiting { await commit() } else { await load() }
+        await sync(load: true)
     }
 
     func saveToken(_ token: String) async {
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else { return }
         hasToken = PlanToken.save(token)
-        if hasToken, state.waiting { await commit() }
+        if hasToken, state.waiting { await sync(load: false) }
     }
 
     func removeToken() {
         PlanToken.delete()
         hasToken = false
+    }
+
+    /// Sends a waiting change, or else loads the site copy if `load`, after the request before it.
+    private func sync(load canLoad: Bool) async {
+        while let syncing { await syncing.value }
+        let task = Task {
+            if state.waiting { await commit() } else if canLoad { await load() }
+            syncing = nil
+        }
+        syncing = task
+        await task.value
     }
 
     private func commit() async {
@@ -101,11 +114,12 @@ final class PlanSync {
             status = hasToken ? .waiting : .noToken
             return
         }
-        switch await PlanRepo.commit(state.text, sha: sha, api: api, token: token, transport: Outbox.urlSession) {
+        let sent = state.text
+        switch await PlanRepo.commit(sent, sha: sha, api: api, token: token, transport: Outbox.urlSession) {
         case .saved(let sha):
             state.sha = sha
-            state.waiting = false
-            status = .current
+            state.waiting = state.text != sent
+            status = state.waiting ? .waiting : .current
             save()
         case .conflict:
             if let site = try? await PlanRepo.load(api: api, token: nil, transport: Outbox.urlSession) { reload(site) }

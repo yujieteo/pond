@@ -136,7 +136,7 @@ public struct Plan: Equatable, Sendable {
         replace(slot)
     }
 
-    /// Adds a slot at the end of the list "Added in the app". The first added slot makes the list, after the last slot.
+    /// Adds a slot at the end of the list "Added in the app". The first added slot makes the list, after the list or the table of the last slot.
     public mutating func addSlot(_ text: String, days: Set<Weekday>) {
         var lines = self.lines
         let slot = Slot(text: Plan.oneLine(text), made: nil, domains: [], days: .on(days), part: .added, line: 0)
@@ -145,7 +145,11 @@ public struct Plan: Equatable, Sendable {
         } else if let heading = lines.firstIndex(of: Plan.addedHeading) {
             lines.insert(contentsOf: ["", Plan.line(slot, was: "")], at: heading + 1)
         } else {
-            let after = slots.last.map { $0.line + 1 } ?? lines.count
+            var after = slots.last.map { $0.line + 1 } ?? lines.count
+            while after < lines.count, !lines[after].trimmingCharacters(in: .whitespaces).isEmpty,
+                  !lines[after].hasPrefix("#"), !lines[after].hasPrefix("**") {
+                after += 1
+            }
             lines.insert(contentsOf: ["", Plan.addedHeading, "", Plan.line(slot, was: "")], at: after)
         }
         self = Plan(markdown: lines.joined(separator: "\n"))
@@ -153,7 +157,10 @@ public struct Plan: Equatable, Sendable {
 
     public mutating func removeSlot(_ index: Int) {
         var lines = self.lines
-        lines.remove(at: slots[index].line)
+        let start = slots[index].line
+        var end = start + 1
+        while end < lines.count, lines[end].first?.isWhitespace == true { end += 1 }
+        lines.removeSubrange(start..<end)
         self = Plan(markdown: lines.joined(separator: "\n"))
     }
 

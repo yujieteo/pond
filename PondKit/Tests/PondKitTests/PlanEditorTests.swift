@@ -39,7 +39,7 @@ import Testing
     let added = edited.slots.filter { $0.part == .added }
     #expect(added.map(\.text) == ["Text (1): one paper, from an interest", "Nature (12): a walk in a park"])
     #expect(added.first?.domains == [1])
-    #expect(edited.markdown.contains("**Added in the app**\n\n- [ ] Text (1): one paper, from an interest (days: Mon Fri)\n- [ ] Nature (12): a walk in a park (days: Sun)\n"))
+    #expect(edited.markdown.contains("- [ ] Monthly slot: see the table below.\n\n**Added in the app**\n\n- [ ] Text (1): one paper, from an interest (days: Mon Fri)\n- [ ] Nature (12): a walk in a park (days: Sun)\n\n**Monthly slot"))
     #expect(edited.slots(on: .friday).contains { $0.text == "Text (1): one paper, from an interest" })
     #expect(edited.domains == plan.domains)
 
@@ -47,6 +47,9 @@ import Testing
     edited.removeSlot(edited.slots.firstIndex { $0.text == "Text (1): one paper, from an interest" }!)
     #expect(!edited.slots.contains { $0.part == .added })
     #expect(edited.slots.count == plan.slots.count)
+
+    edited.removeSlot(edited.slots.firstIndex { $0.text.hasPrefix("Finish (45 minutes)") }!)
+    #expect(edited.markdown.contains("- [ ] Text (1): two poems, read aloud.\n- [ ] Monthly slot: see the table below."))
 }
 
 @Test func aTableCellKeepsNoBar() {
