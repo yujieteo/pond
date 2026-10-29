@@ -151,21 +151,19 @@ final class Store {
         offer()
     }
 
-    /// Reads the feeds of each interest, at most once in 6 hours. A feed that fails keeps its earlier papers.
+    /// Reads the feeds of each interest, at most once in 6 hours. A fetch that fails or gives no papers keeps the earlier papers.
     func fetchPapers() async {
         guard (interests.fetched.map { $0 < .now - 6 * 3600 } ?? true) else { return }
         var papers = interests.papers
         for topic in interests.topics {
             var items: [Paper] = []
-            var failed = false
             for source in topic.sources {
-                if let (data, _) = try? await URLSession.shared.data(from: source.url) {
+                if let (data, response) = try? await URLSession.shared.data(from: source.url),
+                   let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status) {
                     items += FeedParser.parse(data)
-                } else {
-                    failed = true
                 }
             }
-            if !failed || !items.isEmpty { papers[topic.name] = Array(items.prefix(100)) }
+            if topic.sources.isEmpty || !items.isEmpty { papers[topic.name] = Array(items.prefix(100)) }
         }
         var next = interests
         next.papers = papers.filter { name, _ in interests.topics.contains { $0.name == name } }

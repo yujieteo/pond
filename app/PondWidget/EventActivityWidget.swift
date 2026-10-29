@@ -8,7 +8,7 @@ import WidgetKit
 struct EventActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: EventAttributes.self) { context in
-            EventLockScreen(event: context.attributes, done: context.state.done)
+            EventLockScreen(event: context.attributes, done: context.state.done, ended: context.isStale)
                 .activityBackgroundTint(Color.card)
                 .activitySystemActionForegroundColor(Color.ink)
         } dynamicIsland: { context in
@@ -17,7 +17,8 @@ struct EventActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.trailing) { Text(context.attributes.start, style: .time).font(.headline) }
                 DynamicIslandExpandedRegion(.center) { Text(context.attributes.title).font(.headline).lineLimit(1) }
                 DynamicIslandExpandedRegion(.bottom) {
-                    EventButtons(event: context.attributes, done: context.state.done).foregroundStyle(.white)
+                    EventButtons(event: context.attributes, done: context.state.done, ended: context.isStale)
+                        .foregroundStyle(.white)
                 }
             } compactLeading: {
                 Text("🎟")
@@ -33,6 +34,7 @@ struct EventActivityWidget: Widget {
 private struct EventLockScreen: View {
     let event: EventAttributes
     let done: Bool
+    let ended: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -43,7 +45,7 @@ private struct EventLockScreen: View {
             .lineLimit(2)
             Text(([event.place] + [event.cost].compactMap { $0 }).joined(separator: " · "))
                 .font(.system(size: 13)).foregroundStyle(Color.muted).lineLimit(1)
-            EventButtons(event: event, done: done)
+            EventButtons(event: event, done: done, ended: ended)
         }
         .foregroundStyle(Color.ink)
         .padding(14)
@@ -53,11 +55,14 @@ private struct EventLockScreen: View {
 private struct EventButtons: View {
     let event: EventAttributes
     let done: Bool
+    let ended: Bool
 
     var body: some View {
         HStack(spacing: 8) {
             if done {
                 Text("✓ In your log").font(.headline)
+            } else if ended {
+                Text("Ended").font(.headline)
             } else {
                 Button(intent: OpenURLIntent(event.directions)) { pill("Go", filled: false) }
                 Button(intent: EventDoneIntent(day: event.day, id: event.id)) { pill("Done", filled: true) }
