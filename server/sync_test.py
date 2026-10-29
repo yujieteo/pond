@@ -401,6 +401,8 @@ def phone_fallback(server, desktop, mac, front):
     expect("the desktop refuses a body over 8192 bytes (413)", code("POST", "/pond/entry", big, {"Content-Length": len(big)}) == 413)
     expect("the desktop refuses a GET of /pond/entry (405)", code("GET", "/pond/entry", headers={}) == 405)
     expect("the desktop sends no reply to an HTTP read", http_request(desktop.port, "GET", "/log/", headers={}) is None)
+    expect("the desktop takes no save over FastCGI (405)",
+           fcgi(desktop.port, "POST", "/pond/entry", body, good).startswith(b"Status: 405"))
     headers = {"Content-Length": len(body), "Signature": good}
     expect("the desktop saves a good body (201)", code("POST", "/pond/entry", body, headers) == 201)
     accepted("h1", 1, body, "over HTTP")

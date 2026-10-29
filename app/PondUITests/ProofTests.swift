@@ -38,7 +38,7 @@ final class ProofTests: XCTestCase {
     func testFallbackToTheDesktop() throws {
         let desktop = try XCTUnwrap(env["POND_DESKTOP"], "set TEST_RUNNER_POND_DESKTOP")
         // Port 1 on this machine has no server: the send gets no reply.
-        let app = try launchAndEnrol(["-server", "http://127.0.0.1:1"])
+        let app = try launchAndEnrol(["-server", "http://127.0.0.1:1", "-fallback", "YES"])
         app.buttons["Show key"].tap()
         let field = app.textFields["desktop"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))

@@ -29,7 +29,7 @@ struct KeyView: View {
             }
             @Bindable var store = store
             Text("Desktop over the VPN").font(.system(size: 15, weight: .semibold)).padding(.top, 8)
-            Text("When the server is down, the phone saves to the desktop. Turn on WireGuard on the phone.")
+            Text("From phase 5, when the server is down, the phone saves to the desktop. Turn on WireGuard on the phone.")
                 .font(.system(size: 15)).foregroundStyle(Color.muted)
             TextField("http://10.0.0.2:8788", text: $store.desktop)
                 .font(.system(size: 15, design: .monospaced))

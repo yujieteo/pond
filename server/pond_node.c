@@ -18911,18 +18911,7 @@ static void serve_g(Config_g * c_g, int32_t fd_g, gs_rhdr *v_g_hdr, gs_stack *v_
     L21:;
     cgi_g.base = t109; cgi_g.len = 0;
     cgi_g.len = 0;
-    uint8_t *t31 = r_g.uri_g.e;
-    int64_t t32 = (int64_t)r_g.uri_g.len;
-    int64_t t33 = 0;
-    int64_t t34 = t32;
-    t35.data = t31 + t33; t35.len = t34 - t33;
-    t36 = t35;
-    t37.data = ((uint8_t *)gs_str100); t37.len = 11;
-    uint8_t t38 = t36.len == t37.len;
-    if (t38) {
-        t38 = gs_memeq(t36.data, t37.data, (size_t)((t36.len) * 1));
-    }
-    if (t38) {
+    if (r_g.http_g) {
         t39.hdr = (gs_rhdr *)&r_g; t39.stk = GS(gs_sp + 0);
         t40.hdr = (gs_rhdr *)&cgi_g; t40.stk = GS(gs_sp + 1);
         GS(gs_sp + 1)->top = t109;
@@ -19379,27 +19368,6 @@ static int64_t fcgi_parse_g(void *buf_g_data, int64_t buf_g_len, gs_rhdr *r_g_hd
                 }
                 goto L95;
                 L88:;
-                {
-                    t96 = name_g;
-                    t97.data = ((uint8_t *)gs_str111); t97.len = 14;
-                    uint8_t t98 = t96.len == t97.len;
-                    if (t98) {
-                        t98 = gs_memeq(t96.data, t97.data, (size_t)((t96.len) * 1));
-                    }
-                    if (t98) {
-                        int64_t n_g_4;
-                        uint8_t ok_g;
-                        int64_t t99 = parse_int_g_208(value_g.data, value_g.len, 10, &ok_g);
-                        n_g_4 = t99;
-                        if (!(ok_g)) goto L100;
-                        if (!((uint8_t)((int64_t)((int64_t)(n_g_4)) >= (int64_t)(0)))) goto L100;
-                        {
-                            int64_t *t101 = &((*(Request_g *)r_g.hdr).length_g);
-                            (*t101) = n_g_4;
-                        }
-                        L100:;
-                    }
-                }
                 L95:;
             }
             L87:;

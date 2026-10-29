@@ -405,17 +405,18 @@ A pull each 5 s and a scan of `entries/` each second give the time of convergenc
 
 ## The phone fallback
 
-Phase 4: the phone saves to the server first, and to the desktop over WireGuard when the server is down.
+Phase 4: the phone saves to the server first, and to the desktop over WireGuard when the server is down. The fallback is built in phase 4, but it stays off until phase 5 (see [Shadow mode and the fallback](#shadow-mode-and-the-fallback)).
 
 - The outbox of the phone keeps each change until a node acknowledges it with 200 or 201. Then the change has no other place to go.
 - A send tries the server first. If the server gives no reply in 10 s, or a 5xx, the send tries the desktop. After a node is down, the next changes of the same send go to the node after it first. Reason: each change must not wait 10 s for a server that is down.
 - Any other reply of the server (200, 201, 400, 403, 409, 413) is final for that send, and the phone does not try the desktop. Reason: a reply shows that the server is up, and a 403 or a 409 there must not become a save on the desktop.
 - If no node takes a change, it stays in the outbox, and the phone sends it again later, as before.
 - The address of the desktop is a setting of the phone: "Desktop over the VPN" under "Show key", for example `http://<WireGuard address of the desktop>:8788`. It is empty at first, and then the phone has no fallback.
+- The setting `fallback` of the phone turns on the fallback. It is off at first. With it off, the phone sends only to the server, and keeps each change in the outbox while the server is down, as before phase 4. A launch argument `-fallback YES` turns it on for a test.
 
 ### The save on the desktop
 
-`pond_node` takes `POST /pond/entry` with the rules of pond_save (`docs/protocol.md`): the same checks, and the same replies and texts. The 409 text is `the server has rev <n>`, so the phone reads it as from the server.
+`pond_node` takes `POST /pond/entry` over HTTP only, with the rules of pond_save (`docs/protocol.md`): the same checks, and the same replies and texts. The 409 text is `the server has rev <n>`, so the phone reads it as from the server.
 
 1. A reader checks the request: the method (405), the `Content-Length` (411 and 413), the fields with `server/request.goose`, the same code as pond_save (400), and the phone signature with a key in `keys/` (403).
 2. The reader puts the body and its signature on the queue of the writer, with the connection. Reason: the writer is the only thread that writes.
@@ -427,19 +428,20 @@ The desktop saves into its store, not into `entries/`. The sync then brings the 
 ### Shadow mode and the fallback
 
 In shadow mode, pond_read serves the public site from `entries/` on the server. A save on the desktop comes to the store of the server, but not to `entries/`.
-Thus until phase 5, the site does not show a save that only the desktop took, and the compare tool reports it as a difference, until the phone changes that entry again on the server.
+Thus a save that only the desktop took does not come to the site, and the compare tool reports it as a difference. Reason for the fallback off: such a difference stops the 3 weeks with zero differences that phase 5 needs.
+Phase 5 turns on the fallback together with the switch to the store. Then the site serves the store, and a save on the desktop comes to the site. With the fallback off, this gap does not occur in shadow mode.
 
 ### The fallback test
 
 `server/sync_test.py` also tests the phase 4 path, with an HTTP front for pond_save on the server, as httpd and slowcgi:
 
-- The save on the desktop: 403 with no signature or a bad signature, 400 for a private field, 411, 413, 405 for a `GET`, no reply to an HTTP read, 201, 200 for the same body, and 409 with the saved `rev` for another body at the same `rev`. The save comes to the server and the Mac.
+- The save on the desktop: 403 with no signature or a bad signature, 400 for a private field, 411, 413, 405 for a `GET`, no reply to an HTTP read, 405 for a save over FastCGI, 201, 200 for the same body, and 409 with the saved `rev` for another body at the same `rev`. The save comes to the server and the Mac.
 - The server up: the phone saves to the server.
 - The server down (its daemon and its HTTP front), the desktop up: the desktop acknowledges each change, and the outbox is empty. After a 409 from the desktop, the phone saves the `rev` after it. The saves come to the Mac.
 - The server and the desktop down: the outbox keeps each change.
 - The server back, the desktop still down: the phone saves the waiting changes to the server, and the server pulls the saves of the desktop from the Mac. Then the desktop comes back, and the 3 nodes converge with each acknowledged save.
 
-`PondKit/Tests/PondKitTests/OutboxTests.swift` tests the choice of the node, and `testFallbackToTheDesktop` in `app/PondUITests` tests the app in the simulator against a `pond_node` (see `README.md`).
+`PondKit/Tests/PondKitTests/OutboxTests.swift` tests the choice of the node: with the fallback off, no change goes to the desktop, and with it on, the tests above. It also tests the replies, and `testFallbackToTheDesktop` in `app/PondUITests` tests the app in the simulator against a `pond_node` (see `README.md`).
 
 ### Measured results of the fallback
 
@@ -528,7 +530,8 @@ Do these steps after the sync works. The phone key must be in `<pond>/keys/` on 
 1. On the desktop, open TCP port 8788 on the WireGuard interface only. On NixOS: `networking.firewall.interfaces.<WireGuard interface>.allowedTCPPorts = [ 8788 ];`.
 2. In the WireGuard configuration of the phone, put the address of the desktop in `AllowedIPs`, and turn on "On Demand", so that the tunnel is up when the phone sends.
 3. On the phone, under "Show key", set "Desktop over the VPN" to `http://<WireGuard address of the desktop>:8788`.
-4. Test: with the phone on the tunnel, make the server unreachable for the phone, save an entry, and check that the desktop log has `saved <id> rev 1`. Then check that the server has the entry after it comes back: `pond_shadow get fcgi 8788 /pond/node` gives the same hash on each node.
+4. In phase 5, turn on the fallback (the setting `fallback`). Before phase 5, do the test below with the launch argument `-fallback YES`.
+5. Test: with the phone on the tunnel, make the server unreachable for the phone, save an entry, and check that the desktop log has `saved <id> rev 1`. Then check that the server has the entry after it comes back: `pond_shadow get fcgi 8788 /pond/node` gives the same hash on each node.
 
 ## Tests of the daemon
 

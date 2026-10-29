@@ -167,6 +167,16 @@ public struct Journal: Codable, Equatable, Sendable {
 public enum Outbox {
     public typealias Transport = @Sendable (URLRequest) async throws -> (status: Int, body: Data)
 
+    /// The nodes that take a save, in the order of the tries: the server, then the desktop if `fallback` is on and
+    /// `desktop` is an http or https URL. The fallback stays off until phase 5 of docs/store.md: in shadow mode, the site
+    /// does not show a save that only the desktop took.
+    public static func nodes(server: URL, desktop: String, fallback: Bool) -> [URL] {
+        guard fallback, let url = URL(string: desktop.trimmingCharacters(in: .whitespaces)), ["http", "https"].contains(url.scheme),
+              url.host() != nil
+        else { return [server] }
+        return [server, url]
+    }
+
     /// Sends each signed change once, to the first node of `nodes` that is up: the server, then the desktop over the VPN.
     /// A node is down if it gives no reply or a 5xx. After a node is down, the next changes start at the node after it,
     /// so that each change does not wait for a node that is down again. Returns the replies in the same sequence.

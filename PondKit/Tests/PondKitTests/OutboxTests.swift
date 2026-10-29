@@ -235,6 +235,22 @@ private func signed(_ count: Int) throws -> [SignedChange] {
     #expect(journal[id]?.waiting == true, "the change stays in the outbox until a node acknowledges it")
 }
 
+@Test func withTheFallbackOffOnlyTheServerIsAsked() async throws {
+    let off = Outbox.nodes(server: server, desktop: desktop.absoluteString, fallback: false)
+    #expect(off == [server])
+    let nodes = Nodes(["teoyujie.org": nil, "10.0.0.2": (201, "saved\n")])
+    let replies = await Outbox.send(try signed(2), nodes: off, transport: nodes.transport)
+    #expect(replies == [.later, .later], "each change stays in the outbox while the server is down")
+    #expect(await nodes.asked == ["teoyujie.org"], "no change goes to the desktop")
+}
+
+@Test func withTheFallbackOnTheDesktopComesAfterTheServer() {
+    #expect(Outbox.nodes(server: server, desktop: " \(desktop.absoluteString) ", fallback: true) == [server, desktop])
+    for bad in ["", "10.0.0.2:8788", "ftp://10.0.0.2", "http://"] {
+        #expect(Outbox.nodes(server: server, desktop: bad, fallback: true) == [server], "\(bad) is not a desktop")
+    }
+}
+
 @Test func withNoDesktopOnlyTheServerIsAsked() async throws {
     let nodes = Nodes(["teoyujie.org": nil])
     let replies = await Outbox.send(try signed(2), nodes: [server], transport: nodes.transport)

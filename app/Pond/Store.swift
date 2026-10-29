@@ -31,12 +31,11 @@ final class Store {
         didSet { UserDefaults.standard.set(desktop, forKey: "desktop") }
     }
 
-    /// The nodes that take a save, in the order of the tries: the server, then the desktop if it is a valid URL.
-    var nodes: [URL] {
-        guard let url = URL(string: desktop.trimmingCharacters(in: .whitespaces)), ["http", "https"].contains(url.scheme), url.host() != nil
-        else { return [server] }
-        return [server, url]
-    }
+    /// The fallback to the desktop: off until phase 5 of docs/store.md turns it on. A launch argument `-fallback YES` turns it on.
+    let fallback = UserDefaults.standard.bool(forKey: "fallback")
+
+    /// The nodes that take a save, in the order of the tries.
+    var nodes: [URL] { Outbox.nodes(server: server, desktop: desktop, fallback: fallback) }
 
     private let file = URL.applicationSupportDirectory.appending(path: "journal.json")
     private let experimentsFile = URL.applicationSupportDirectory.appending(path: "experiments.json")

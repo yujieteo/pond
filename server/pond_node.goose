@@ -460,7 +460,7 @@ thread_fn syncer(c: Config) {
 
 // The readers: one request on each connection.
 
-// http is true for HTTP/1.1, false for FastCGI. length is the
+// http is true for HTTP/1.1, false for FastCGI. length is the HTTP
 // Content-Length, or -1 if the request has none.
 struct Request { id: i64, http: bool, method: u8[..16], uri: u8[..4096], sig: u8[..512], length: i64, body: u8[>..] }
 
@@ -511,10 +511,6 @@ fn fcgi_parse(buf: u8[:], r: Request&) -> i64 {
         if name == "REQUEST_METHOD" && value.len <= 16 { r.method.append(value); }
         else if name == "REQUEST_URI" && value.len <= 4096 { r.uri.append(value); }
         else if name == "HTTP_SIGNATURE" && value.len <= 512 { r.sig.append(value); }
-        else if name == "CONTENT_LENGTH" {
-            let n, ok = parse_int(value);
-            if ok && n >= 0 { r.length = n; }
-        }
         p += nn + vn;
     }
     return 1;
@@ -613,8 +609,8 @@ fn send_reply(fd: i32, id: i64, http: bool, cgi: u8[:]) {
     pond_close(fd);
 }
 
-// A save of the phone, POST /pond/entry: the checks of pond_save, with its
-// replies. A good save goes to the writer, which replies on fd: true. Else
+// A save of the phone, POST /pond/entry over HTTP: the checks of pond_save,
+// with its replies. A good save goes to the writer, which replies on fd: true. Else
 // false, with the reply in out.
 fn take_save(c: Config&, fd: i32, r: Request&, out: u8[>..]&) -> bool {
     guard r.method == "POST" else { render::format_reply(out, "405 Method Not Allowed", "text/plain", "use POST\n"); return false; }
@@ -677,7 +673,7 @@ fn serve(c: Config&, fd: i32, v: View&, conflicts: u8[>..]&) {
     // The phone speaks HTTP only to save. httpd sends the reads as FastCGI.
     guard !r.http || r.uri == "/pond/entry" else { pond_close(fd); return; }
     var cgi: u8[>..] = [];
-    if r.uri == "/pond/entry" {
+    if r.http {
         guard !take_save(c, fd, r, cgi) else { return; }
         send_reply(fd, r.id, r.http, cgi);
         return;
