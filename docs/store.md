@@ -222,7 +222,7 @@ The daemon reads one request on each connection, and closes the connection after
 - If a request is not FastCGI, or is HTTP for another path, the daemon closes the connection with no reply.
 
 The daemon serves `GET /pond/entries.json`, `/log`, `/log/` and `/log/feed.xml`.
-It also serves `POST /pond/entry` to the phone (see [The phone fallback](#the-phone-fallback)), `POST /pond/sync` to the peers (see [Sync](#sync)), and `GET /pond/node`: `{"entries":<n>,"hash":"<index hash>"}`. httpd does not send these two paths.
+It also serves `POST /pond/entry` to the phone (see [The phone fallback](#the-phone-fallback)), `POST /pond/sync` to the peers (see [Sync](#sync)), and `GET /pond/node`: `{"entries":<n>,"hash":"<index hash>"}`. httpd does not send these paths to the daemon.
 Each reply has the same bytes as the reply of pond_read, because both programs use the same code in `server/render.goose`.
 Each other path gets 404, and each other method gets 405, as from pond_read.
 A request can have 64 KB or less. Each read and each write on a connection has a time limit of 5 s. Reason: a slow client must not hold a reader.
