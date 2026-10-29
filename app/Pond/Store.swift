@@ -3,15 +3,17 @@ import Observation
 import PondKit
 import WidgetKit
 
-/// The state of the app: the journal on the phone, the plan, the invite, the key and the sends.
+/// The state of the app: the journal on the phone, the plan, the invite, the experiments, the key and the sends.
 /// One store serves the app, the notification and the widgets' buttons.
 @Observable @MainActor
 final class Store {
     static let shared = Store()
 
     private(set) var journal: Journal
-    let plan: Plan
+    private(set) var plan: Plan
     private(set) var invite: Invite
+    /// The runs of experiments. They stay on the phone (R10).
+    private(set) var experiments: ExperimentLog
     private(set) var key: Result<DeviceKey, Error>?
 
     /// "Every day" items (R13). They stay here until the plan editor (build step 11) keeps them in the plan.
@@ -22,16 +24,15 @@ final class Store {
     let server = URL(string: UserDefaults.standard.string(forKey: "server") ?? "https://teoyujie.org")!
 
     private let file = URL.applicationSupportDirectory.appending(path: "journal.json")
+    private let experimentsFile = URL.applicationSupportDirectory.appending(path: "experiments.json")
     private var sending = false
     private var wake: Task<Void, Never>?
     private var scheduling: Task<Void, Never>?
 
     init() {
         journal = (try? JSONDecoder().decode(Journal.self, from: Data(contentsOf: file))) ?? Journal()
-        // The bundled copy of media-plan.md, until the app reads the site repo (build step 11).
-        let text = Bundle.main.url(forResource: "media-plan", withExtension: "md")
-            .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
-        plan = Plan(markdown: text)
+        experiments = (try? JSONDecoder().decode(ExperimentLog.self, from: Data(contentsOf: experimentsFile))) ?? ExperimentLog()
+        plan = PlanSync.shared.plan
         invite = SharedInvite.load()
         offer()
     }
@@ -72,9 +73,15 @@ final class Store {
         offer(before: before)
     }
 
+    /// A change of the plan in the plan editor makes the choices of the days not yet offered again (sync 1).
+    func setPlan(_ plan: Plan) {
+        self.plan = plan
+        offer()
+    }
+
     private func offer(before: Invite) {
         let journal = journal
-        invite.offer(plan: plan, journal: &self.journal, now: .now)
+        invite.offer(plan: plan, journal: &self.journal, experiments: experiments, now: .now)
         if self.journal != journal { save() }
         if !inviteChanged(before) { schedule() }
     }
@@ -86,6 +93,14 @@ final class Store {
         inviteChanged(before)
     }
 
+    /// "Pick for today" on an empty cell of the grid.
+    func pick(_ cell: Cell) {
+        guard let domain = plan.domains.first(where: { $0.number == cell.domain }) else { return }
+        let before = invite
+        invite.pick(Menu.notVisited(domain, cell.mode, day: today), on: today)
+        inviteChanged(before)
+    }
+
     func unpick(on day: String) {
         let before = invite
         invite.unpick(on: day)
@@ -93,14 +108,57 @@ final class Store {
     }
 
     /// "Done" in the app, the notification or a widget: records the pick, then signs and sends it (sync 3).
-    /// With no network, the entry waits in the outbox.
+    /// With no network, the entry waits in the outbox. "Done" on the experiment counts a day of its run and records nothing (sync 7).
     @discardableResult
     func done(on day: String) -> String? {
         let before = invite
+        let source = invite[day]?.picked?.source
         guard let entry = invite.done(on: day) else { return nil }
+        if case .experiment = source {
+            experiments.count(day)
+            saveExperiments()
+            inviteChanged(before)
+            return nil
+        }
         let id = record(entry)
         inviteChanged(before)
         return id
+    }
+
+    // MARK: experiments
+
+    func startExperiment(_ id: String) {
+        experiments.start(id, on: today)
+        experimentsChanged()
+    }
+
+    /// Closes the active run with its notice. A published notice becomes an entry after `undo` seconds, if no "Undo" came (sync 8).
+    func closeExperiment(notice: String?, publish: Bool, undo: TimeInterval) {
+        experiments.close(on: today, notice: notice)
+        experimentsChanged()
+        guard publish, let run = experiments.runs.last, run.notice != nil else { return }
+        Task {
+            try? await Task.sleep(for: .seconds(undo))
+            guard let last = experiments.runs.indices.last, experiments.runs[last] == run,
+                  let entry = ExperimentLog.noticeEntry(run, date: today) else { return }
+            experiments.runs[last].published = record(entry)
+            saveExperiments()
+        }
+    }
+
+    func reopenExperiment() {
+        experiments.reopen()
+        experimentsChanged()
+    }
+
+    private func experimentsChanged() {
+        saveExperiments()
+        offer()
+    }
+
+    private func saveExperiments() {
+        try? FileManager.default.createDirectory(at: experimentsFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONEncoder().encode(experiments).write(to: experimentsFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
     /// The work that a button of the notification or a widget waits for before the app goes back to the background.

@@ -7,6 +7,8 @@ public struct Choice: Codable, Equatable, Sendable {
         /// An earlier entry with a fun mark of "good" or "loved it".
         case enjoyed(id: String)
         case notVisited
+        /// The active experiment (docs/concepts.md, sync 7). "Done" counts a day and makes no entry.
+        case experiment(id: String)
     }
 
     public var source: Source
@@ -40,7 +42,7 @@ public enum Menu {
         var choices: [Choice] = []
 
         // The weekday core repeats each workday, so it is the "Every day" row, not a choice.
-        let slots = plan.slots(on: weekday).filter { $0.days != .on(Weekday.workdays) }
+        let slots = plan.slots(on: weekday).filter { $0.part != .core }
         if !slots.isEmpty {
             let slot = slots[turn % slots.count]
             let (label, what) = parts(slot.text)
@@ -68,11 +70,16 @@ public enum Menu {
         }
         if !open.isEmpty {
             let (domain, mode) = open[turn % open.count]
-            let first = domain.cells[mode]?.split(separator: ",").first.map(String.init) ?? domain.name
-            choices.append(Choice(source: .notVisited, why: "Not visited yet · \(domain.name) · \(mode.label)",
-                                  entry: Entry(date: today, title: capitalized(first), domain: domain.number, mode: mode)))
+            choices.append(notVisited(domain, mode, day: today))
         }
         return choices
+    }
+
+    /// The choice of a place not visited yet: the menu's 3rd choice, or an empty cell of the grid.
+    public static func notVisited(_ domain: Domain, _ mode: Mode, day: String) -> Choice {
+        let first = domain.cells[mode]?.split(separator: ",").first.map(String.init) ?? domain.name
+        return Choice(source: .notVisited, why: "Not visited yet · \(domain.name) · \(mode.label)",
+                      entry: Entry(date: day, title: capitalized(first), domain: domain.number, mode: mode))
     }
 
     /// YYYY-MM-DD in the calendar's time zone, as an entry's `date`.

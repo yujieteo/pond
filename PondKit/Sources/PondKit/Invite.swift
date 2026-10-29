@@ -13,6 +13,22 @@ public struct InviteDay: Codable, Equatable, Sendable {
     public var picked: Choice? {
         pick.flatMap { choices.indices.contains($0) ? choices[$0] : nil }
     }
+
+    /// Puts `choice` in place of the day's experiment choice, as the last choice. A pick of a choice that goes is cleared.
+    mutating func experiment(_ choice: Choice?) {
+        let old = choices.firstIndex { if case .experiment = $0.source { true } else { false } }
+        if let old, choices[old] == choice { return }
+        if let old {
+            choices.remove(at: old)
+            if pick == old { pick = nil; done = false }
+        }
+        guard let choice else { return }
+        if choices.count == Invite.maxChoices {
+            if pick == choices.count - 1 { return }
+            choices.removeLast()
+        }
+        choices.append(choice)
+    }
 }
 
 /// The daily invite (R3, docs/concepts.md, Invite): one notification at the invite time with the day's choices.
@@ -48,7 +64,9 @@ public struct Invite: Codable, Equatable, Sendable {
     /// A day is offered when its notification time is past or when it has a pick: today's choices then stay.
     /// An earlier day goes, with no mark. Each "enjoyed recently" choice of an offered day marks its record in `journal`,
     /// so a record comes back at most once in `Menu.enjoyedGap` days (sync 5). The days not yet offered mark a copy only.
-    public mutating func offer(plan: Plan, journal: inout Journal, now: Date, calendar: Calendar = .current) {
+    /// The active experiment of `experiments` is the last choice of each day of its run, also of an offered day (sync 7).
+    public mutating func offer(plan: Plan, journal: inout Journal, experiments: ExperimentLog = ExperimentLog(), now: Date,
+                               calendar: Calendar = .current) {
         let today = Menu.day(now, calendar)
         let offered = days.filter { day in
             day.pick != nil || time(of: day.date, calendar: calendar).map { $0 <= now } ?? false
@@ -65,6 +83,18 @@ public struct Invite: Codable, Equatable, Sendable {
             let choices = Array(Menu.choices(plan: plan, journal: scratch, date: date, calendar: calendar).prefix(Invite.maxChoices))
             for case .enjoyed(let id) in choices.map(\.source) { scratch.offer(id, on: day) }
             return InviteDay(date: day, choices: choices)
+        }
+        for index in days.indices { days[index].experiment(experiments.choice(on: days[index].date)) }
+    }
+
+    /// Picks `choice` on `date`, in place of the day's "not visited" choice: an empty cell of the grid.
+    public mutating func pick(_ choice: Choice, on date: String) {
+        change(date) {
+            let index = $0.choices.firstIndex { $0.source == .notVisited }
+                ?? ($0.choices.count < Invite.maxChoices ? $0.choices.count : $0.choices.count - 1)
+            if index == $0.choices.count { $0.choices.append(choice) } else { $0.choices[index] = choice }
+            $0.pick = index
+            $0.done = false
         }
     }
 

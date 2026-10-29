@@ -14,10 +14,11 @@ struct PondApp: App {
                 .preferredColorScheme(.light)
         }
         .onChange(of: phase) {
-            // A new day gives a new menu, and a send that failed goes again.
+            // A new day gives a new menu, a send that failed goes again, and the plan loads or sends.
             guard phase == .active else { return }
             store.offer()
             Task { await store.flush() }
+            Task { await PlanSync.shared.refresh() }
         }
     }
 }
