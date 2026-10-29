@@ -10,14 +10,25 @@ struct Editing: Identifiable {
 
 /// The toast layer: one line and its controls (docs/concepts.md, Undo before send).
 struct Toast: Identifiable {
-    enum Kind { case fun(id: String), undo(id: String) }
+    enum Kind {
+        case fun(id: String), undo(id: String)
+        /// The undo of a change that is not an entry: a slot or an experiment.
+        case undoAction(label: String, undo: @MainActor () -> Void)
+    }
     let id = UUID()
     var kind: Kind
 }
 
+/// The screens of the floating bar.
+enum Tab: String, CaseIterable {
+    case today = "Today", plan = "Plan", grid = "Grid", experiments = "Experiments"
+}
+
 /// Today (#today in the mock-up): the menu (R2), "Every day" (R13) and the entries of today.
+/// It also holds the floating bar with the other screens, the entry sheet and the toasts.
 struct TodayView: View {
     @Environment(Store.self) private var store
+    @State private var tab = Tab.today
     @State private var editing: Editing?
     @State private var toast: Toast?
     @State private var showKey = false
@@ -25,27 +36,19 @@ struct TodayView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text(Date.now.formatted(Date.VerbatimFormatStyle(format: "\(weekday: .wide) \(day: .defaultDigits) \(month: .wide)", locale: .current, timeZone: .current, calendar: .current)).uppercased())
-                            .font(.system(size: 13, weight: .medium)).tracking(0.5).foregroundStyle(Color.muted)
-                        Spacer()
-                        inviteTime
+                Group {
+                    switch tab {
+                    case .today: today
+                    case .plan: PlanView(undo: undo)
+                    case .grid: GridView { tab = .today }
+                    case .experiments: ExperimentsView(undo: undo)
                     }
-                    Text("What do you want today?")
-                        .font(.serif(32)).padding(.top, 4).padding(.bottom, 16)
-                    choices
-                    heading("Every day")
-                    everyDay
-                    heading("Done today")
-                    done
-                    heading("This phone")
-                    Button("Show key") { showKey = true }.buttonStyle(PillStyle(kind: .quiet, size: 15))
                 }
                 .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 110)
                 .frame(maxWidth: 640, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
+            .scrollDismissesKeyboard(.interactively)
             .zIndex(Layer.content.rawValue)
             bar.zIndex(Layer.controls.rawValue)
             if let toast {
@@ -69,6 +72,26 @@ struct TodayView: View {
             }
         }
         .sheet(isPresented: $showKey) { KeyView() }
+    }
+
+    private var today: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(Date.now.formatted(Date.VerbatimFormatStyle(format: "\(weekday: .wide) \(day: .defaultDigits) \(month: .wide)", locale: .current, timeZone: .current, calendar: .current)).uppercased())
+                    .font(.system(size: 13, weight: .medium)).tracking(0.5).foregroundStyle(Color.muted)
+                Spacer()
+                inviteTime
+            }
+            Text("What do you want today?")
+                .font(.serif(32)).padding(.top, 4).padding(.bottom, 16)
+            choices
+            heading("Every day")
+            everyDay
+            heading("Done today")
+            done
+            heading("This phone")
+            Button("Show key") { showKey = true }.buttonStyle(PillStyle(kind: .quiet, size: 15))
+        }
     }
 
     private func heading(_ text: String) -> some View {
@@ -184,9 +207,14 @@ struct TodayView: View {
     // MARK: the bar and the toasts
 
     private var bar: some View {
-        HStack(spacing: 4) {
-            Text("Today").font(.system(size: 13, weight: .medium)).foregroundStyle(Color.pondBackground)
-                .frame(minWidth: 64, minHeight: 48).padding(.horizontal, 8).background(Capsule().fill(Color.ink))
+        HStack(spacing: 2) {
+            ForEach(Tab.allCases, id: \.self) { item in
+                Button(item.rawValue) { tab = item }
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(tab == item ? Color.pondBackground : Color.ink)
+                    .frame(minWidth: 52, minHeight: 48).padding(.horizontal, 6)
+                    .background(Capsule().fill(tab == item ? Color.ink : .clear))
+                    .accessibilityAddTraits(tab == item ? .isSelected : [])
+            }
             Button {
                 editing = Editing(id: UUID().uuidString, entry: Entry(date: store.today, title: ""), isNew: true)
             } label: {
@@ -213,6 +241,11 @@ struct TodayView: View {
         show(Toast(kind: .undo(id: id)), seconds: 6)
     }
 
+    /// A change that "Undo" takes back in the next 6 seconds: the plan and the experiments send nothing before then.
+    private func undo(_ label: String, _ action: @escaping @MainActor () -> Void) {
+        show(Toast(kind: .undoAction(label: label, undo: action)), seconds: 6)
+    }
+
     private func show(_ next: Toast, seconds: Double) {
         toast = next
         Task {
@@ -237,17 +270,24 @@ struct TodayView: View {
                 }
             case .undo(let id):
                 Text("Removed")
-                Button("Undo") {
-                    store.restore(id)
-                    self.toast = nil
-                }
-                .foregroundStyle(Color.pondBackground).padding(.horizontal, 16).frame(minHeight: tap)
-                .overlay(Capsule().strokeBorder(Color.pondBackground))
+                undoButton { store.restore(id) }
+            case .undoAction(let label, let action):
+                Text(label)
+                undoButton(action)
             }
         }
         .foregroundStyle(Color.pondBackground)
         .padding(.leading, 16).padding(.trailing, 6).padding(.vertical, 6)
         .background(Capsule().fill(Color.ink))
         .shadow(color: .ink.opacity(0.16), radius: 12, y: 6)
+    }
+
+    private func undoButton(_ action: @escaping @MainActor () -> Void) -> some View {
+        Button("Undo") {
+            action()
+            toast = nil
+        }
+        .foregroundStyle(Color.pondBackground).padding(.horizontal, 16).frame(minHeight: tap)
+        .overlay(Capsule().strokeBorder(Color.pondBackground))
     }
 }

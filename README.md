@@ -6,7 +6,7 @@ A fun, low-energy media and experiments companion: iOS app, signed log, stream o
 - `PondKit/`: the Swift package for the app: entry format and signing, the plan parser, the host-to-domain guess, and "One paper".
 - `server/`: the save service, the read service and `pond_node`, the daemon of the store with the sync between the nodes, in Goose, with the generated C beside them. `server/service/` has the service files of the daemon for OpenBSD, Linux and macOS.
 - `store/`: the storage engine for the log, in Goose: one append-only segment file with a checksum for each record, and an index by id, date and tag. `docs/store.md` is the design. `pond_node` keeps the store in shadow mode beside the entry files of pond_save.
-- `app/`: the iOS app, Waldenlog on the Home Screen: Today, the entry sheet, the phone key and the outbox.
+- `app/`: the iOS app, Waldenlog on the Home Screen: Today, the entry sheet, the phone key, the outbox, the plan editor, the grid and the experiments.
 - `mac/pond-key/`: the Mac enrol key (R7 in `docs/concepts.md`): a command-line tool that makes a Secure Enclave key and signs request bodies.
 
 ## Test
@@ -68,7 +68,11 @@ The signed `POST /pond/key` enrol request is a later task. Until then, use `pond
 - Today shows the menu (today's slot from the plan, one entry that you marked "good" or "loved it", one grid cell not visited yet this year), the "Every day" row and the entries of today.
 - The phone keeps each entry in `journal.json` first. The outbox sends each change, signed, to `POST /pond/entry`, and sends a failed change again at the next change, when the app opens, or after a minute. After a 409, it sends the change again with the revision after the server's.
 - The key is a P-256 key in the Secure Enclave, made at the first send or at "Show key". The simulator has no Secure Enclave, so it uses a software key.
-- The plan is the copy of `media-plan.md` in the PondKit test fixtures, until the plan editor reads the site repo.
+- The plan is `media-plan.md` in the site repo `yujieteo/site`. The app loads it with the GitHub API when it opens. Before the first load, it uses the copy in the PondKit test fixtures.
+- Plan (the plan editor) shows each slot of the menu with its 7 day buttons. Tap a slot to change its words, tap a day to add it or take it away, "+ Add a slot" to add one. A slot on other days than its list gets a marker at the end of its line, for example `(days: Mon Fri)`. Added slots go in the list "Added in the app". The weekday core is the "Every day" row, so it is not in the editor.
+- Each change goes to the site repo as a commit 7 seconds after the last change, after the 6 seconds of "Undo". The commit needs a fine-grained GitHub token with "Contents: read and write" on the site repo only. Paste it under "GitHub token" in Plan. The app keeps it in the Keychain behind Face ID or the passcode. If the site copy changed after the phone loaded it, the app loads the site copy and the phone's change goes.
+- Grid shows the 17 domains × 4 modes of the selected year. A filled dot is a cell with an entry. A tap on a dot shows its entries, or "Pick for today" for an empty cell of this year.
+- Experiments has the starter set: 5 experiments from X1 to X8 of the design board, with credit and links. One runs at a time, for 7 days. While it runs, it is the last choice on Today, and "Done" on it counts a day and makes no entry. "Close" asks "What did you notice?" once: "Keep private" keeps the line on the phone, "Publish" makes an entry of kind note after the 6 seconds of "Undo".
 - The invite is one notification a day at the invite time (⏰ on Today, 19:30 at first), with up to 4 choices as buttons. A pick changes the notification in place to the pick, "✓ Done" and "Something else", with no sound. "✓ Done" records the entry like "Done" on Today. An ignored notification stays until you clear it, and the next day removes it.
 - The app computes the choices of the next 14 days when it schedules them, each time that it opens or that the journal changes. If the app does not open for 14 days, no notification comes after the 14th day.
 - The Home Screen widget (medium or large) and the Lock Screen widget show the same choices or the same pick as the notification. Their buttons run in the app, with the same journal, key and outbox. "Done" on the Lock Screen asks for the unlock, because the Secure Enclave key needs it.
@@ -77,7 +81,7 @@ The signed `POST /pond/key` enrol request is a later task. Until then, use `pond
 To enrol the phone, tap "Show key" and put the text in `/var/www/pond/keys/<name>.pub` on the server.
 
 The launch argument `-server <url>` changes the save service from `https://teoyujie.org`, for example to a local test server.
-`PondUITests` is the simulator proof. `testRecordOneEntry` enrols the key on a local test server, records one entry and waits until the server accepts it. `testInvite` sets the invite time to the next minute, picks the first choice in the notification, taps "✓ Done" in the Home Screen widget and waits for the entry on `/log/`. Before `testInvite`, add the medium Waldenlog widget to the Home Screen and to the Lock Screen by hand. The test cannot open a notification in the list for its buttons, so it taps "✓ Done" in the widget.
+`PondUITests` is the simulator proof. `ScreensTests` tests the plan editor, the grid and the experiments with no server: run it with `-only-testing:PondUITests/ScreensTests` and `TEST_RUNNER_POND_SHOTS` only. `testRecordOneEntry` enrols the key on a local test server, records one entry and waits until the server accepts it. `testInvite` sets the invite time to the next minute, picks the first choice in the notification, taps "✓ Done" in the Home Screen widget and waits for the entry on `/log/`. Before `testInvite`, add the medium Waldenlog widget to the Home Screen and to the Lock Screen by hand. The test cannot open a notification in the list for its buttons, so it taps "✓ Done" in the widget.
 Run it against the built server programs:
 
 ```

@@ -27,6 +27,7 @@ extension Choice {
         case .slot: entry.domain == 2 ? "🎵" : entry.domain == 5 ? "🎬" : "📄"
         case .enjoyed: "🎵"
         case .notVisited: entry.mode == .live ? "🎟" : "🧭"
+        case .experiment: "🌱"
         }
     }
 }
